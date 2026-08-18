@@ -18,3 +18,5 @@ dist/
 # local agent notes
 AGENTS.md
 CLAUDE.md
+build_spike*.log
+spike/

@@ -25,7 +25,8 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 | Sync engine (scan, diff, upload/download, conflicts, deletion guards) | works, carried over from iObsi |
 | Cross-platform paths, config locations, shutdown | done — engine is Windows-capable |
 | Windows end-to-end verification | not yet run on real hardware |
-| Native GUI | not started |
+| Native GUI (dashboard, logs, conflicts, settings) | working from source |
+| Setup wizard and 2FA re-auth | not started |
 | Tray, autostart, notifications | not started |
 | Installers (Windows / AppImage / deb / Arch) | not started |
 
@@ -33,7 +34,7 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 
 1. ~~**Portability** — canonical path handling, `platformdirs` config locations, clean shutdown,
    explicit keyring backends.~~ Done.
-2. **GUI** — PySide6 main window: stats, logs, conflicts, settings.
+2. ~~**GUI** — PySide6 main window: stats, logs, conflicts, settings.~~ Done.
 3. **Setup wizard and re-auth** — including the 2FA prompt, which the daemon currently cannot ask for
    (it just dies when the iCloud session expires).
 4. **Background behaviour** — tray icon, close-hides-to-tray, start on login, desktop notifications.
@@ -41,9 +42,10 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 
 ## Design
 
-The sync engine is kept **byte-identical** to iObsi's (`sync_engine.py`, `scanner.py`, `conflict.py`,
-`state_db.py`, `auth.py`, `filters.py`, `config.py`, `watcher.py`), so fixes can be diffed and moved
-between the two projects. The GUI lives in `gui/` and depends on the engine, never the reverse.
+The sync engine started as a copy of iObsi's and has since diverged — cross-platform path handling,
+platform config directories and keyring hardening all landed here. obsisync is developed on its own
+terms from this point; iObsi remains a separate, working Linux tool and is not a constraint on this
+one. The GUI lives in `gui/` and depends on the engine, never the reverse.
 
 `sync.py` is a headless CLI over the same engine — useful for debugging and for running on a machine
 with no desktop.
@@ -57,7 +59,11 @@ auth.py          iCloud auth, keyring, vault discovery
 filters.py       ignore patterns
 watcher.py       filesystem watcher
 sync.py          headless CLI
-gui/             native Qt front end
+gui/
+  bridge.py      engine threads -> Qt signals
+  pages.py       dashboard, logs, conflicts, settings
+  main_window.py navigation, controller, close-to-tray
+  app.py         entry point
 ```
 
 ## Development
@@ -67,7 +73,11 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 python tests/test_engine.py       # engine regression suite (62 checks)
 python tests/test_portability.py  # cross-platform path handling (24 checks)
-python sync.py --help
+python tests/test_bridge.py       # engine -> Qt signal bridge (5 checks)
+python tests/test_gui.py          # main window wiring (22 checks)
+
+python -m gui.app                 # run the GUI
+python sync.py --help             # headless CLI
 ```
 
 ## Credits
