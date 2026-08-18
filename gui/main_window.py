@@ -1,10 +1,10 @@
 """Main window: navigation, page wiring, and the controller the pages act through."""
 import threading
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QMessageBox,
-    QStackedWidget, QStatusBar, QWidget,
+    QApplication, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow,
+    QMessageBox, QStackedWidget, QStatusBar, QSystemTrayIcon, QWidget,
 )
 
 import sync_engine
@@ -116,9 +116,9 @@ class MainWindow(QMainWindow):
         self.bridge.pendingFirstRunChanged.connect(self.dashboard.on_pending_first_run)
         self.settings.saved.connect(self.conflicts.refresh)
 
-        # The ring buffer already holds recent history; show it rather than
-        # starting the view empty.
-        self.logs.prime(sync_engine.get_logs(limit=200))
+        # Read the persisted log, not the in-memory ring: the ring is empty at
+        # startup, which made the view look as though nothing had ever happened.
+        self.logs.prime(sync_engine.get_log_history(limit=500))
 
     def _on_status(self, status):
         conflicts = status.get("conflicts", 0)
@@ -131,11 +131,26 @@ class MainWindow(QMainWindow):
         """Allow the next close to actually exit."""
         self._really_quit = True
 
+    def changeEvent(self, event):
+        # The muted colours are derived from the palette, so they must be
+        # recomputed when the system switches between light and dark.
+        if event.type() == QEvent.PaletteChange:
+            from gui.pages import refresh_secondary
+            refresh_secondary()
+        super().changeEvent(event)
+
     def closeEvent(self, event):
         # Closing must not stop syncing: this is a background daemon with a window.
         if self._really_quit:
             self.bridge.shutdown()
             event.accept()
+            return
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            # With no tray there would be no way to get the window back, so
+            # closing has to mean quitting rather than vanishing.
+            self.bridge.shutdown()
+            event.accept()
+            QApplication.quit()
             return
         event.ignore()
         self.hide()

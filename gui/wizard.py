@@ -247,7 +247,8 @@ class SetupDialog(QDialog):
             "The first option never transfers or overwrites anything. Files that "
             "differ are listed as conflicts for you to resolve afterwards.")
         note.setWordWrap(True)
-        note.setEnabled(False)
+        from gui.pages import make_secondary
+        make_secondary(note)
         box.addWidget(note)
         box.addStretch()
         self.stack.addWidget(page)

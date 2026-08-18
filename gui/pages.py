@@ -9,9 +9,10 @@ controller. When there is none, those controls are disabled rather than hidden,
 so the UI does not reshuffle when a session expires.
 """
 import os
+import weakref
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
@@ -25,6 +26,53 @@ from state_db import unresolved_conflicts
 
 _LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 _MAX_LOG_BLOCKS = 2000
+
+# How far a secondary label is blended toward the background. 0 is full contrast,
+# 1 is invisible; 0.4 stays comfortably readable in both light and dark themes.
+_SECONDARY_BLEND = 0.4
+
+
+_SECONDARY_WIDGETS = weakref.WeakSet()
+
+
+def refresh_secondary():
+    """Recompute muted colours after the system palette changes."""
+    for widget in list(_SECONDARY_WIDGETS):
+        try:
+            widget.setPalette(widget.parentWidget().palette()
+                              if widget.parentWidget() else QPalette())
+            _apply_secondary(widget)
+        except RuntimeError:
+            pass          # widget already destroyed
+
+
+def make_secondary(widget, blend=_SECONDARY_BLEND):
+    """De-emphasise a label without disabling it.
+
+    setEnabled(False) is the obvious way to grey text out and the wrong one: it
+    means "this control is unavailable", so Qt renders it at minimal contrast
+    and assistive tools report it as inactive. Blending the theme's own text
+    colour toward its background keeps the text legible, keeps it enabled, and
+    follows whatever palette the system supplies — light or dark.
+    """
+    _SECONDARY_WIDGETS.add(widget)
+    return _apply_secondary(widget, blend)
+
+
+def _apply_secondary(widget, blend=_SECONDARY_BLEND):
+    palette = widget.palette()
+    fg = palette.color(QPalette.Active, QPalette.WindowText)
+    bg = palette.color(QPalette.Active, QPalette.Window)
+    muted = QColor(
+        round(fg.red() * (1 - blend) + bg.red() * blend),
+        round(fg.green() * (1 - blend) + bg.green() * blend),
+        round(fg.blue() * (1 - blend) + bg.blue() * blend),
+    )
+    for role in (QPalette.WindowText, QPalette.Text):
+        palette.setColor(QPalette.Active, role, muted)
+        palette.setColor(QPalette.Inactive, role, muted)
+    widget.setPalette(palette)
+    return widget
 
 
 class StatTile(QFrame):
@@ -46,7 +94,8 @@ class StatTile(QFrame):
 
         cap = QLabel(caption)
         cap.setAlignment(Qt.AlignCenter)
-        cap.setEnabled(False)
+        make_secondary(cap)
+        self.caption = cap
 
         layout.addWidget(self.value)
         layout.addWidget(cap)
@@ -126,14 +175,19 @@ class DashboardPage(QWidget):
         row = QHBoxLayout(controls)
         self.status_label = QLabel("connecting…")
         self.last_sync = QLabel("")
-        self.last_sync.setEnabled(False)
+        make_secondary(self.last_sync)
         self.sync_now = QPushButton("Sync now")
         self.pause = QPushButton("Pause")
+        self.close_window = QPushButton("Close window")
+        self.close_window.setToolTip(
+            "Hide the window. Syncing carries on in the background — "
+            "quit from the tray icon to stop it.")
         row.addWidget(self.status_label)
         row.addWidget(self.last_sync)
         row.addStretch()
         row.addWidget(self.sync_now)
         row.addWidget(self.pause)
+        row.addWidget(self.close_window)
         layout.addWidget(controls)
 
         self.deletions = AlertBanner(
@@ -170,7 +224,13 @@ class DashboardPage(QWidget):
 
         self.sync_now.clicked.connect(sync_engine.trigger_sync)
         self.pause.clicked.connect(self._toggle_pause)
+        self.close_window.clicked.connect(self._close_window)
         self._wire_alerts()
+
+    def _close_window(self):
+        window = getattr(self._controller, "window", None)
+        if window is not None:
+            window.close()          # hides to tray; see MainWindow.closeEvent
 
     def _toggle_pause(self):
         if sync_engine.is_paused():
@@ -270,7 +330,8 @@ class LogsPage(QWidget):
         self.level.setCurrentText("INFO")
         row.addWidget(self.level)
         row.addStretch()
-        self.clear_btn = QPushButton("Clear view")
+        self.clear_btn = QPushButton("Clear logs")
+        self.clear_btn.setToolTip("Delete the stored log, not just this view.")
         row.addWidget(self.clear_btn)
         layout.addLayout(row)
 
@@ -280,7 +341,17 @@ class LogsPage(QWidget):
         self.view.setFont(QFont("monospace"))
         layout.addWidget(self.view)
 
-        self.clear_btn.clicked.connect(self.view.clear)
+        self.clear_btn.clicked.connect(self._clear_logs)
+
+    def _clear_logs(self):
+        if QMessageBox.question(
+                self, "Clear logs?",
+                "Delete the stored log history? This cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        if sync_engine.clear_log_history():
+            self.view.clear()
+            sync_engine.log("INFO", "Log cleared")
 
     def on_log(self, entry):
         threshold = _LOG_LEVELS.index(self.level.currentText())
@@ -308,7 +379,7 @@ class ConflictsPage(QWidget):
 
         self.empty = QLabel("No unresolved conflicts.")
         self.empty.setAlignment(Qt.AlignCenter)
-        self.empty.setEnabled(False)
+        make_secondary(self.empty)
         layout.addWidget(self.empty)
 
         self.table = QTableWidget(0, 4)
@@ -426,7 +497,7 @@ class SettingsPage(QWidget):
             "Adding a pattern that matches already-synced files will raise a prompt "
             "on the dashboard rather than deleting anything.")
         note.setWordWrap(True)
-        note.setEnabled(False)
+        make_secondary(note)
         layout.addWidget(note)
 
         row = QHBoxLayout()

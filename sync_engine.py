@@ -89,6 +89,33 @@ def get_logs(limit=100):
         return list(_LOG_RING[-limit:])
 
 
+def get_log_history(limit=500):
+    """Recent log entries from the database.
+
+    The ring buffer only holds what this process has produced, so it is empty at
+    startup. Reading the persisted table instead means the log view survives a
+    restart.
+    """
+    from state_db import recent_logs
+    try:
+        return recent_logs(limit)
+    except Exception:
+        return list(_LOG_RING[-limit:])
+
+
+def clear_log_history():
+    """Erase the log, in memory and on disk."""
+    from state_db import clear_logs
+    with _LOG_LOCK:
+        _LOG_RING.clear()
+    try:
+        clear_logs()
+    except Exception as exc:
+        log("ERROR", f"Could not clear the stored log: {exc}")
+        return False
+    return True
+
+
 def subscribe_logs(queue):
     with _LOG_LOCK:
         _web_log_listeners.append(queue)

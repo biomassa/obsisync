@@ -242,8 +242,13 @@ jobs:
         run: |
           .\dist\obsisync.exe --version
           .\dist\obsisync.exe --headless --help
-          .\dist\obsisync.exe --headless --help | Select-String -Quiet "Remove stored iCloud credentials" `
-            || (Write-Error "compiled CLI lost its help text"; exit 1)
+          # Click builds --help from docstrings; -OO would strip them and leave
+          # the compiled CLI documenting nothing.
+          $help = .\dist\obsisync.exe --headless --help | Out-String
+          if ($help -notmatch 'Remove stored iCloud credentials') {
+              Write-Error "compiled CLI lost its help text"
+              exit 1
+          }
 
       - name: Build installer
         run: |
