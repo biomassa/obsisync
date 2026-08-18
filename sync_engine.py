@@ -75,7 +75,7 @@ def log(level, message):
         _LOG_RING.append(entry)
         if len(_LOG_RING) > _LOG_RING_MAX:
             _LOG_RING[:] = _LOG_RING[-_LOG_RING_MAX:]
-    db_log(level, message)
+    db_log(level, message, entry["timestamp"])
     with _LOG_LOCK:
         for q in _web_log_listeners:
             try:

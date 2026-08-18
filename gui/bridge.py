@@ -94,6 +94,16 @@ class EngineBridge(QObject):
             self._last["first_run"] = pending_first_run
             self.pendingFirstRunChanged.emit(pending_first_run)
 
+    def push_current(self):
+        """Emit the present state at once, for a window that just appeared.
+
+        The poll only emits on change, and the bridge outlives the window now.
+        Without this a newly built window shows empty tiles until something
+        happens to alter the status — which, on a quiet vault, can be minutes.
+        """
+        self._last.clear()
+        self._poll_status()
+
     # ── lifecycle ───────────────────────────────────
 
     def shutdown(self):

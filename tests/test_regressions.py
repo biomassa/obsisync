@@ -168,6 +168,34 @@ check("a second window can be built on the same bridge", w4.bridge is shared_bri
 check("the controller points at the newest window", shared_ctl.window is w4)
 shared_bridge.shutdown()
 
+print("\n== a rebuilt window is populated at once ==")
+from gui.bridge import EngineBridge as _EB
+from gui.main_window import MainWindow as _MW, Controller as _Ctl
+import sync_engine as _se2
+_se2._save_stats(files=817, uploaded=59, downloaded=55, conflicts=0, errors=2, deleted=28)
+_br = _EB(); _c = _Ctl(None)
+_w1 = _MW(bridge=_br, controller=_c)
+check("the first window shows the stats immediately, not after a poll",
+      _w1.dashboard.tiles["files"].value.text() == "817",
+      _w1.dashboard.tiles["files"].value.text())
+_w1.detach()
+_w2 = _MW(bridge=_br, controller=_c)
+# The poll only emits on change, and the bridge outlives the window, so without
+# an explicit push a reopened window stays blank until something happens.
+check("a window rebuilt from the tray is populated too",
+      _w2.dashboard.tiles["files"].value.text() == "817",
+      _w2.dashboard.tiles["files"].value.text())
+check("its daemon state is not stuck on connecting",
+      _w2.dashboard.status_label.text() != "connecting…",
+      _w2.dashboard.status_label.text())
+_br.shutdown()
+
+print("\n== log timestamps agree between memory and database ==")
+_se2.log("INFO", "stamp check")
+_ring = _se2.get_logs(1)[0]["timestamp"]
+_db = [e for e in _se2.get_log_history(20) if e["message"] == "stamp check"][-1]["timestamp"]
+check("stored and live entries use the same clock", _ring == _db, f"{_ring} vs {_db}")
+
 print("\n== clear stats ==")
 import sync_engine as _se
 _se._save_stats(files=817, uploaded=59, downloaded=55, conflicts=3, errors=2, deleted=28)

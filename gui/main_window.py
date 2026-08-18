@@ -136,6 +136,10 @@ class MainWindow(QMainWindow):
         # startup, which made the view look as though nothing had ever happened.
         self.logs.prime(sync_engine.get_log_history(limit=500))
 
+        # Fill the tiles now rather than waiting for the next poll, which only
+        # fires on a change and would otherwise leave a rebuilt window blank.
+        self.bridge.push_current()
+
     def _on_status(self, status):
         conflicts = status.get("conflicts", 0)
         self.statusBar().showMessage(

@@ -156,10 +156,18 @@ def all_states():
 # ── sync_log ─────────────────────────────────────────
 
 
-def log(level, message):
+def log(level, message, timestamp=None):
+    """Append a log entry.
+
+    The timestamp is written explicitly. The column default is SQLite's
+    datetime('now'), which is UTC, while the in-memory ring records local time —
+    so the log view showed stored history and live entries hours apart.
+    """
+    import time as _time
+    stamp = timestamp or _time.strftime("%Y-%m-%d %H:%M:%S")
     _get_conn().execute(
-        "INSERT INTO sync_log (level, message) VALUES (?, ?)",
-        (level, message),
+        "INSERT INTO sync_log (timestamp, level, message) VALUES (?, ?, ?)",
+        (stamp, level, message),
     )
     _get_conn().commit()
 
