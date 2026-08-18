@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.3 — 2026-08-18
+
+Signing in with an Apple ID now works. Earlier versions could not complete a first-time sign-in, so
+the only way in was to import a session from another tool.
+
+### Fixed
+
+- **Two-factor sign-in failed every time.** obsisync never called `request_2fa_code()`. For a modern
+  HSA2 account that call performs Apple's trusted-device handshake and records the state that code
+  validation then reads. Without it validation used the legacy verifier, which Apple rejects, so
+  every code looked wrong however many times the prompt was approved.
+- **The setup wizard signed in twice.** It authenticated once to discover that a code was needed,
+  then authenticated again to submit it. The second sign-in created a new session, which made Apple
+  send another code, and then checked the code against the wrong session. It could not succeed, and
+  it spent a code on each attempt until Apple reported `tooManyCodesSent`.
+- The code prompt now names the delivery route and the destination number. Apple often shows a
+  prompt on a trusted device *and* sends an SMS, and only one of them is the code the session
+  accepts.
+- A failed sign-in no longer prints Apple's raw authentication payload, several hundred lines long
+  and containing the account phone numbers, into the window.
+
+### Added
+
+- `--profile DIR` puts settings and sync state under `DIR`. Use it for a second vault or account, or
+  to try a sign-in without disturbing a working installation.
+- obsisync refuses to start a second instance against the same directory. Two daemons on one vault
+  fight each other.
+
 ## 0.1.2 — 2026-08-18
 
 ### Fixed

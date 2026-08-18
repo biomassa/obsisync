@@ -3,7 +3,7 @@
 
 !define APPNAME "obsisync"
 !ifndef VERSION
-  !define VERSION "0.1.2"
+  !define VERSION "0.1.3"
 !endif
 
 Name "${APPNAME}"

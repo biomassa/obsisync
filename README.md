@@ -65,6 +65,9 @@ Select **More info**, then **Run anyway**.
 The setup wizard asks for your Apple ID and password, then for a two-factor code if Apple wants
 one. It then finds your vault on iCloud Drive and asks where to keep it on this computer.
 
+obsisync signs in to Apple directly. It needs no external authenticator. Apple then sends a
+verification code, either to your trusted devices or by SMS, and the dialog names which one to use.
+
 obsisync stores the password in the system credential store. It never writes the password to a
 file.
 
