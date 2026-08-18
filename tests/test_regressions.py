@@ -83,8 +83,12 @@ print("\n== the window reloads settings after setup ==")
 import inspect
 from gui import app as gui_app
 src_app = inspect.getsource(gui_app)
-check("settings are reloaded once the wizard finishes",
-      "self.window.settings.load()" in src_app)
+# The window is now built after the wizard rather than before it, so its
+# settings page reads the post-setup config on construction. The earlier
+# explicit reload existed only because the window was built too early.
+_run = src_app[src_app.index("def run(self)"):src_app.index("return self.app.exec()")]
+check("the window is built after setup, so its settings are current",
+      _run.index("SetupDialog()") < _run.index("self._show_window()"))
 check("a watchdog reports a stalled connection",
       "_connect_slow" in src_app and "45000" in src_app)
 
@@ -132,6 +136,52 @@ class _Win:
 ctl.window = _Win()
 dash._close_window()
 check("clicking it closes the window", closed == [True])
+
+print("\n== the window is disposable ==")
+import gui.app as _app_mod
+_src = inspect.getsource(_app_mod)
+check("the bridge belongs to the application, not the window",
+      "self.bridge = EngineBridge()" in _src)
+check("closing destroys the window rather than only hiding it",
+      "_destroy_window" in _src and "deleteLater" in _src)
+check("destruction is deferred out of the close event",
+      "QTimer.singleShot(0, self._destroy_window)" in _src)
+check("opening rebuilds a window when there is none",
+      "if self.window is None:" in _src)
+check("a missing window cannot crash the status bar",
+      "_status_message" in _src)
+check("a 2FA prompt reopens the window first",
+      _src.index("def _on_twofa") < _src.index("dialog = TwoFactorDialog")
+      and "self._show_window()" in _src[_src.index("def _on_twofa"):_src.index("def _on_quit")])
+
+from gui.main_window import MainWindow, Controller
+from gui.bridge import EngineBridge
+shared_bridge = EngineBridge()
+shared_ctl = Controller(None)
+w3 = MainWindow(bridge=shared_bridge, controller=shared_ctl)
+check("the window accepts an injected bridge", w3.bridge is shared_bridge)
+check("it does not own an injected bridge", not w3._owns_bridge)
+w3.detach()
+check("detach leaves the shared bridge running", shared_bridge._thread.is_alive())
+w4 = MainWindow(bridge=shared_bridge, controller=shared_ctl)
+check("a second window can be built on the same bridge", w4.bridge is shared_bridge)
+check("the controller points at the newest window", shared_ctl.window is w4)
+shared_bridge.shutdown()
+
+print("\n== clear stats ==")
+import sync_engine as _se
+_se._save_stats(files=817, uploaded=59, downloaded=55, conflicts=3, errors=2, deleted=28)
+dash2 = DashboardPage(ctl)
+dash2.on_status(_se._load_stats())
+check("Clear stats sits before Close window",
+      dash2.clear_stats.text() == "Clear stats" and hasattr(dash2, "close_window"))
+dash2._clear_stats()
+stats = _se._load_stats()
+check("counters are zeroed",
+      all(stats[k] == 0 for k in _se.COUNTER_KEYS), str(stats))
+check("the tracked file count is left alone", stats["files"] == 817, str(stats["files"]))
+check("the tiles update immediately",
+      dash2.tiles["uploaded"].value.text() == "0")
 
 print("\n== logs persist and can be cleared ==")
 import sync_engine

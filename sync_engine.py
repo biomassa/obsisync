@@ -103,6 +103,19 @@ def get_log_history(limit=500):
         return list(_LOG_RING[-limit:])
 
 
+COUNTER_KEYS = ("uploaded", "downloaded", "conflicts", "errors", "deleted")
+
+
+def reset_counters():
+    """Zero the running totals.
+
+    ``files`` is deliberately left alone: it is the number of tracked files, not
+    a total of past activity, and the next cycle overwrites it anyway.
+    """
+    _save_stats(**{key: 0 for key in COUNTER_KEYS})
+    log("INFO", "Statistics reset")
+
+
 def clear_log_history():
     """Erase the log, in memory and on disk."""
     from state_db import clear_logs

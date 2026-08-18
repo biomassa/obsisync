@@ -178,6 +178,10 @@ class DashboardPage(QWidget):
         make_secondary(self.last_sync)
         self.sync_now = QPushButton("Sync now")
         self.pause = QPushButton("Pause")
+        self.clear_stats = QPushButton("Clear stats")
+        self.clear_stats.setToolTip(
+            "Reset the uploaded, downloaded, conflicts, errors and deleted "
+            "totals. The tracked file count is not affected.")
         self.close_window = QPushButton("Close window")
         self.close_window.setToolTip(
             "Hide the window. Syncing carries on in the background — "
@@ -187,6 +191,7 @@ class DashboardPage(QWidget):
         row.addStretch()
         row.addWidget(self.sync_now)
         row.addWidget(self.pause)
+        row.addWidget(self.clear_stats)
         row.addWidget(self.close_window)
         layout.addWidget(controls)
 
@@ -224,8 +229,15 @@ class DashboardPage(QWidget):
 
         self.sync_now.clicked.connect(sync_engine.trigger_sync)
         self.pause.clicked.connect(self._toggle_pause)
+        self.clear_stats.clicked.connect(self._clear_stats)
         self.close_window.clicked.connect(self._close_window)
         self._wire_alerts()
+
+    def _clear_stats(self):
+        sync_engine.reset_counters()
+        for key in sync_engine.COUNTER_KEYS:
+            if key in self.tiles:
+                self.tiles[key].set_value(0)
 
     def _close_window(self):
         window = getattr(self._controller, "window", None)

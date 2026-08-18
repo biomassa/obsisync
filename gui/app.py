@@ -8,7 +8,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 import config
 import state_db
 import sync_engine
-from gui.main_window import MainWindow
+from gui.bridge import EngineBridge
+from gui.main_window import Controller, MainWindow
 from gui.session import SessionManager
 from gui.tray import Tray
 from gui.wizard import SetupDialog, TwoFactorDialog
@@ -33,7 +34,12 @@ class Application:
         self.cfg = config.load()
         sync_engine.set_log_level(self.cfg.get("log_level", "INFO"))
 
-        self.window = MainWindow()
+        # These outlive the window: the tray needs status while the window is
+        # gone, and the iCloud session must not be re-established on every open.
+        self.bridge = EngineBridge()
+        self.controller = Controller(None)
+        self.window = None
+
         self.session = SessionManager()
         self.tray = Tray() if Tray.available() else None
         if self.tray:
@@ -45,13 +51,11 @@ class Application:
         self.app.aboutToQuit.connect(self._on_quit)
 
     def _wire_tray(self):
-        bridge = self.window.bridge
-        bridge.statusChanged.connect(self.tray.on_status)
-        bridge.pendingDeletionsChanged.connect(self._notify_deletions)
-        bridge.pendingIgnoredChanged.connect(self._notify_ignored)
+        self.bridge.statusChanged.connect(self.tray.on_status)
+        self.bridge.pendingDeletionsChanged.connect(self._notify_deletions)
+        self.bridge.pendingIgnoredChanged.connect(self._notify_ignored)
         self.tray.openRequested.connect(self._show_window)
         self.tray.quitRequested.connect(self._quit)
-        self.window.hidden_to_tray.connect(self._on_hidden)
 
     def _notifications_on(self):
         return bool(config.load().get("notifications", True))
@@ -64,12 +68,38 @@ class Application:
         if self._notifications_on():
             self.tray.on_pending_ignored(paths)
 
+    def _status_message(self, text, timeout=0):
+        """Show a status message, if there is a window to show it in."""
+        if self.window is not None:
+            self.window.statusBar().showMessage(text, timeout)
+
     def _show_window(self):
+        """Build the window if it is gone, then raise it."""
+        if self.window is None:
+            self.window = MainWindow(bridge=self.bridge, controller=self.controller)
+            self.window.hidden_to_tray.connect(self._on_hidden)
         self.window.showNormal()
         self.window.raise_()
         self.window.activateWindow()
 
+    def _destroy_window(self):
+        """Tear the window down so its memory and surface buffers are released.
+
+        Hiding on its own frees nothing: measured on Linux the footprint was
+        identical with the window hidden, because Qt keeps the widgets and the
+        compositor keeps the buffers while the surface lives.
+        """
+        window = self.window
+        if window is None:
+            return
+        self.window = None
+        self.controller.window = None
+        window.detach()
+        window.deleteLater()
+
     def _on_hidden(self):
+        # Destroy after the close event finishes, never during it.
+        QTimer.singleShot(0, self._destroy_window)
         # Closing the window is not obviously non-destructive, so say so once.
         if self.tray and not self._hint_shown:
             self._hint_shown = True
@@ -79,7 +109,8 @@ class Application:
                 key="hide-hint")
 
     def _quit(self):
-        self.window.prepare_quit()
+        if self.window is not None:
+            self.window.prepare_quit()
         self.app.quit()
 
     def run(self):
@@ -88,22 +119,18 @@ class Application:
             if dialog.exec() != SetupDialog.Accepted:
                 return 0                      # user cancelled setup; nothing to run
             self.cfg = dialog.result_config()
-            # The window was built before the wizard ran, so its settings page
-            # is still showing the pre-setup config.
-            self.window.settings.load()
-            self.window.conflicts.refresh()
             # Setup already authenticated, so reuse that session rather than
             # asking Apple (and possibly the user) all over again.
             if dialog.api is not None:
                 self._adopt(dialog.api)
 
-        self.window.show()
+        self._show_window()
         if self.tray:
             self.tray.show()
 
         if self.session.api is None:
             sync_engine.log("INFO", "Connecting to iCloud…")
-            self.window.statusBar().showMessage("Connecting to iCloud…")
+            self._status_message("Connecting to iCloud…")
             self._connect_watchdog = QTimer(self.window)
             self._connect_watchdog.setSingleShot(True)
             self._connect_watchdog.timeout.connect(self._connect_slow)
@@ -136,8 +163,7 @@ class Application:
             "Still connecting to iCloud after 45s. If iCloud is waiting for a "
             "two-factor code it should have prompted; otherwise the request may "
             "be stuck and restarting the app is the quickest way out.")
-        self.window.statusBar().showMessage(
-            "Still connecting — see the Logs page", 15000)
+        self._status_message("Still connecting — see the Logs page", 15000)
 
     def _stop_connect_watchdog(self):
         timer = getattr(self, "_connect_watchdog", None)
@@ -146,10 +172,10 @@ class Application:
 
     def _on_connected(self, api, vault_node):
         self._stop_connect_watchdog()
-        self.window.controller.attach_session(api, vault_node, self.cfg)
+        self.controller.attach_session(api, vault_node, self.cfg)
         self._consume_first_run_mode(api, vault_node)
         self.session.start_daemon(self.cfg)
-        self.window.statusBar().showMessage("Connected to iCloud", 4000)
+        self._status_message("Connected to iCloud", 4000)
 
     def _consume_first_run_mode(self, api, vault_node):
         """Apply the choice made in the wizard, once, before the daemon starts.
@@ -186,18 +212,26 @@ class Application:
         self._stop_connect_watchdog()
         sync_engine.log("ERROR", f"Not connected: {reason}")
         if self.tray:
-            self.tray.set_state("offline", f"obsisync — not connected")
+            self.tray.set_state("offline", "obsisync — not connected")
             if self._notifications_on():
                 self.tray.on_auth_expired(reason)
-        QMessageBox.warning(self.window, "Could not connect to iCloud", reason)
+        # With the window closed the tray notification is the whole message; a
+        # modal dialog with no parent would appear from nowhere.
+        if self.window is not None:
+            QMessageBox.warning(self.window, "Could not connect to iCloud", reason)
 
     def _on_twofa(self):
+        # A code is needed to carry on syncing, so the window must come back
+        # even if the user had closed it.
+        self._show_window()
         dialog = TwoFactorDialog(self.window)
         code = dialog.value() if dialog.exec() == TwoFactorDialog.Accepted else None
         self.session.prompt.provide(code)
 
     def _on_quit(self):
-        self.window.prepare_quit()
+        if self.window is not None:
+            self.window.prepare_quit()
+        self.bridge.shutdown()
         if self.tray:
             self.tray.hide()
         self.session.shutdown()

@@ -72,18 +72,34 @@ class Controller:
 
 
 class MainWindow(QMainWindow):
-    """The window. Closing it hides to tray rather than quitting."""
+    """The window.
+
+    The window is **disposable**. Closing it destroys the widget tree so the
+    memory and the compositor's surface buffers are released; opening it builds
+    a fresh one. Hiding alone frees nothing — Qt keeps every widget allocated
+    and the compositor keeps the buffers while the surface exists.
+
+    Nothing durable may live here as a result. The engine bridge and the iCloud
+    session belong to the application and are passed in, so they survive the
+    window. Everything the pages show is rebuilt from the config file and the
+    database, so a rebuilt window loses no state.
+    """
 
     hidden_to_tray = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, bridge=None, controller=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("obsisync")
         self.resize(940, 640)
         self._really_quit = False
 
-        self.controller = Controller(self)
-        self.bridge = EngineBridge(self)
+        # Owned by the application when supplied; created here only so the
+        # window remains usable on its own, which the tests rely on.
+        self._owns_bridge = bridge is None
+        self.controller = controller if controller is not None else Controller(self)
+        self.bridge = bridge if bridge is not None else EngineBridge(self)
+        if controller is not None:
+            self.controller.window = self
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -139,16 +155,29 @@ class MainWindow(QMainWindow):
             refresh_secondary()
         super().changeEvent(event)
 
+    def detach(self):
+        """Disconnect from the shared bridge before this window is destroyed."""
+        for signal in (self.bridge.logReceived, self.bridge.statusChanged,
+                       self.bridge.pendingDeletionsChanged,
+                       self.bridge.pendingIgnoredChanged,
+                       self.bridge.pendingFirstRunChanged):
+            try:
+                signal.disconnect(self)
+            except (RuntimeError, TypeError):
+                pass          # nothing was connected to this receiver
+
     def closeEvent(self, event):
         # Closing must not stop syncing: this is a background daemon with a window.
         if self._really_quit:
-            self.bridge.shutdown()
+            if self._owns_bridge:
+                self.bridge.shutdown()
             event.accept()
             return
         if not QSystemTrayIcon.isSystemTrayAvailable():
             # With no tray there would be no way to get the window back, so
             # closing has to mean quitting rather than vanishing.
-            self.bridge.shutdown()
+            if self._owns_bridge:
+                self.bridge.shutdown()
             event.accept()
             QApplication.quit()
             return
