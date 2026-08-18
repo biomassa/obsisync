@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     "conflict_strategy": "last-writer-wins",
     "sync_deletes": True,
     "log_level": "INFO",
+    "notifications": True,
     "ignore_patterns": [
         "*.tmp", "*.swp", "*.part", "*.icloud", ".DS_Store",
         "._*", "~$*", ".trash/", ".sync-tmp-*",

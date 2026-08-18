@@ -367,6 +367,16 @@ class SettingsPage(QWidget):
         self.sync_deletes = QCheckBox("Propagate deletions between local and iCloud")
         form.addRow("", self.sync_deletes)
 
+        self.autostart = QCheckBox("Start obsisync when I log in")
+        from gui import autostart as _autostart
+        self.autostart.setEnabled(_autostart.supported())
+        if not _autostart.supported():
+            self.autostart.setToolTip("Not supported on this platform")
+        form.addRow("", self.autostart)
+
+        self.notifications = QCheckBox("Show desktop notifications")
+        form.addRow("", self.notifications)
+
         layout.addLayout(form)
 
         layout.addWidget(QLabel("Ignore patterns (one per line)"))
@@ -403,7 +413,12 @@ class SettingsPage(QWidget):
         self.strategy.setCurrentText(cfg.get("conflict_strategy", "last-writer-wins"))
         self.log_level.setCurrentText(cfg.get("log_level", "INFO"))
         self.sync_deletes.setChecked(bool(cfg.get("sync_deletes", True)))
+        self.notifications.setChecked(bool(cfg.get("notifications", True)))
         self.ignore.setPlainText("\n".join(cfg.get("ignore_patterns", [])))
+        from gui import autostart as _autostart
+        if _autostart.supported():
+            # Read the real OS state, not a config field that could drift from it.
+            self.autostart.setChecked(_autostart.is_enabled())
 
     def _save(self):
         cfg = config.load()
@@ -412,10 +427,17 @@ class SettingsPage(QWidget):
         cfg["conflict_strategy"] = self.strategy.currentText()
         cfg["log_level"] = self.log_level.currentText()
         cfg["sync_deletes"] = self.sync_deletes.isChecked()
+        cfg["notifications"] = self.notifications.isChecked()
         cfg["ignore_patterns"] = [
             line.strip() for line in self.ignore.toPlainText().splitlines() if line.strip()
         ]
         config.save(cfg)
+        from gui import autostart as _autostart
+        if _autostart.supported():
+            try:
+                _autostart.set_enabled(self.autostart.isChecked())
+            except Exception as exc:
+                QMessageBox.warning(self, "Could not change start-on-login", str(exc))
         sync_engine.set_log_level(cfg["log_level"])
         sync_engine.log("INFO", "Settings saved")
         self.saved.emit()
