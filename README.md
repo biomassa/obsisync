@@ -51,8 +51,14 @@ You can also install the `.deb` or the Arch package. To build the binary yoursel
 [Build from source](#build-from-source).
 
 On Windows, run `obsisync-setup-*.exe`. The installer is per-user, so it does not need
-administrator rights. The binary has no code signature, so SmartScreen shows a warning on the first
-start. Select **More info**, then **Run anyway**.
+administrator rights. It adds a Start Menu entry and an entry in Add/Remove Programs.
+
+`obsisync.exe` is the same program without an installer. Use it to run obsisync from a USB stick,
+or to try it without installing anything. Only the installer removes the start-on-login registry
+entry again, so prefer the installer if you plan to use that setting.
+
+Windows shows a SmartScreen warning on the first start, because the program has no code signature.
+Select **More info**, then **Run anyway**.
 
 ## First start
 

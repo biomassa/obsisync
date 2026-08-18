@@ -295,16 +295,31 @@ jobs:
           files: artifacts/**/*
           generate_release_notes: true
           body: |
-            **Back up your vault before using this.** It moves and deletes files.
+            **Back up your vault before you use this.** It moves and deletes files
+            in your notes.
 
-            **Linux — `obsisync-x86_64.AppImage` is the recommended download.**
-            It runs on any distro, needs no install, and is mounted rather than
-            unpacked, so it does not hold its payload in RAM.
+            ### Which file do I download?
 
-            - Linux: `obsisync-x86_64.AppImage`, or `.deb` / `.pkg.tar.zst` to install
-              system-wide
-            - Windows: `obsisync-setup-*.exe` (installer) or `obsisync.exe` (standalone)
+            | | Recommended | Portable |
+            |---|---|---|
+            | **Windows** | `obsisync-setup-VERSION.exe` | `obsisync.exe` |
+            | **Linux** | `obsisync-x86_64.AppImage` | `obsisync-x86_64.AppImage` |
 
-            To build the Linux binary yourself, see "Build from source" in the README.
+            **Windows.** The installer puts the program in your user folder and adds
+            a Start Menu entry. It also gives you an entry in Add/Remove Programs, and
+            it needs no administrator rights.
 
-            Back up your vault before first use.
+            Use `obsisync.exe` instead to run the program without installing it, from
+            a USB stick for example. Only the installer removes the start-on-login
+            registry entry again, so prefer the installer if you plan to use that
+            setting.
+
+            Windows shows a SmartScreen warning on the first start, because the
+            program has no code signature. Select **More info**, then **Run anyway**.
+
+            **Linux.** The AppImage runs on any distribution and needs no
+            installation. The system mounts it instead of unpacking it, so it does not
+            hold its payload in memory. Install the `.deb` or the Arch package instead
+            to put the program in your system directories.
+
+            To compile it yourself, read "Build from source" in the README.
