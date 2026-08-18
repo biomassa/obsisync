@@ -16,6 +16,26 @@ from platformdirs import user_config_dir, user_data_dir
 
 APP_NAME = "obsisync"
 
+# When set, config and state live under this directory instead of the platform
+# locations. It exists so a cold Apple ID sign-in can be attempted without
+# touching a working installation, and it also allows a second vault or account.
+#
+# It must be set before config, state_db or auth are imported: those modules
+# resolve their paths at import time into module-level constants.
+_profile_root = os.environ.get("OBSISYNC_PROFILE") or None
+
+
+def set_profile(root):
+    """Redirect config and state under one directory. None restores the default."""
+    global _profile_root
+    _profile_root = os.path.abspath(os.path.expanduser(root)) if root else None
+    return _profile_root
+
+
+def active_profile():
+    """The profile directory in use, or None when running normally."""
+    return _profile_root
+
 
 # ── vault-relative keys ─────────────────────────────
 
@@ -53,12 +73,16 @@ def to_native(base, key):
 
 
 def config_dir():
-    """Config location: ~/.config/obsisync, %APPDATA%\\obsisync, etc."""
+    """Config location: ~/.config/obsisync, %APPDATA%\\obsisync, or a profile."""
+    if _profile_root:
+        return os.path.join(_profile_root, "config")
     return user_config_dir(APP_NAME, appauthor=False)
 
 
 def data_dir():
     """State location for the SQLite database and iCloud session cookies."""
+    if _profile_root:
+        return os.path.join(_profile_root, "data")
     return user_data_dir(APP_NAME, appauthor=False)
 
 

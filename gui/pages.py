@@ -205,6 +205,19 @@ class DashboardPage(QWidget):
         )
         layout.addWidget(self.deletions)
 
+        from paths import active_profile
+        profile = active_profile()
+        if profile:
+            self.profile_notice = AlertBanner(
+                "Running against a test profile",
+                "Config and sync state are under the directory below, not the "
+                "usual locations. Do not point this at a vault another instance "
+                "is already syncing.",
+                [],
+            )
+            self.profile_notice.set_paths([profile])
+            layout.addWidget(self.profile_notice)
+
         self.first_run = AlertBanner(
             "First sync — nothing tracked yet",
             "Files exist both here and on iCloud, but nothing is tracked, so "

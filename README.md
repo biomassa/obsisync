@@ -109,6 +109,21 @@ Three guards protect your files:
    pauses and asks you first.
 3. **Stale data.** If the remote data comes from a cache, obsisync considers no deletion at all.
 
+## Running a second profile
+
+`--profile DIR` puts the settings and the sync state under `DIR` instead of the usual locations.
+Use it to sync a second vault or a second Apple ID, or to try a sign-in without disturbing a
+working installation.
+
+```bash
+obsisync --profile ~/obsisync-test
+obsisync --profile ~/obsisync-test --headless status
+```
+
+A profile window says so in its title, and the dashboard names the directory, so you cannot confuse
+it with your main instance. obsisync also refuses to start a second instance against the same
+directory, because two daemons on one vault fight each other.
+
 ## Command line
 
 Every command also works without the GUI:

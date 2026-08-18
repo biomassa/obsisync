@@ -59,6 +59,7 @@ jobs:
           python tests/test_migrate.py
           python tests/test_regressions.py
           python tests/test_refresh_cadence.py
+          python tests/test_profile.py
 
   build-linux:
     name: linux binary

@@ -155,6 +155,9 @@ def status():
 
     db_init()
     stats = _load_stats()
+    from paths import active_profile
+    if active_profile():
+        click.echo(f"Profile:   {active_profile()}")
     click.echo(f"Vault:     {cfg.get('vault_name', '?')}")
     click.echo(f"Local:     {cfg['local_path']}")
     click.echo(f"Files:     {stats.get('files', 0)}")

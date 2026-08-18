@@ -24,3 +24,4 @@ docs/screenshots/
 build-standalone/
 build_*.log
 dist/
+*.lock

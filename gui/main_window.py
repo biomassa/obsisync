@@ -89,7 +89,12 @@ class MainWindow(QMainWindow):
 
     def __init__(self, bridge=None, controller=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("obsisync")
+        from paths import active_profile
+        profile = active_profile()
+        # Two instances on one vault would fight, and a tester will have both
+        # open, so a profile window must never look like the real one.
+        self.setWindowTitle(
+            f"obsisync — profile: {profile}" if profile else "obsisync")
         self.resize(940, 640)
         self._really_quit = False
 

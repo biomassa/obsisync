@@ -4,6 +4,8 @@ The icon is drawn rather than loaded from a file so a compiled build has no asse
 to lose, and so its colour can carry status: idle, syncing, paused, or needing
 attention.
 """
+import os
+
 from PySide6.QtCore import QObject, QRect, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
@@ -60,8 +62,12 @@ class Tray(QObject):
         self._state = None
         self._notified = set()
 
+        from paths import active_profile
+        self._profile = active_profile()
+        self._name = f"obsisync [{os.path.basename(self._profile)}]" if self._profile else "obsisync"
+
         self.icon = QSystemTrayIcon(_make_icon("offline"), self)
-        self.icon.setToolTip("obsisync")
+        self.icon.setToolTip(self._name)
 
         menu = QMenu()
         self.open_action = QAction("Open obsisync")
@@ -111,7 +117,7 @@ class Tray(QObject):
         if state != self._state:
             self._state = state
             self.icon.setIcon(_make_icon(state))
-        self.icon.setToolTip(tooltip or f"obsisync — {state}")
+        self.icon.setToolTip(tooltip or f"{self._name} — {state}")
 
     def on_status(self, status):
         needs_attention = status.get("pending_deletions") or status.get("pending_ignored")
@@ -133,7 +139,7 @@ class Tray(QObject):
             self.pause_action.blockSignals(False)
 
         last = status.get("last_sync") or "never"
-        self.set_state(state, f"obsisync — {state}\nlast sync: {last}")
+        self.set_state(state, f"{self._name} — {state}\nlast sync: {last}")
 
     # ── notifications ───────────────────────────────
 

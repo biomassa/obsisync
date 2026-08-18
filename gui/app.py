@@ -2,10 +2,13 @@
 import sys
 import threading
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QLockFile, Qt, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+import os
+
 import config
+import paths
 import state_db
 import sync_engine
 from gui.bridge import EngineBridge
@@ -28,6 +31,22 @@ class Application:
         self.app.setOrganizationName("obsisync")
         # A daemon with a window must survive that window being closed.
         self.app.setQuitOnLastWindowClosed(False)
+
+        # One instance per data directory. Two daemons on one vault would fight
+        # over uploads and deletions, and profiles make that easy to do by
+        # accident.
+        self._lock = QLockFile(os.path.join(paths.data_dir(), "obsisync.lock"))
+        self._lock.setStaleLockTime(30000)
+        if not self._lock.tryLock(100):
+            holder = self._lock.getLockInfo()
+            where = paths.active_profile() or "the default location"
+            QMessageBox.critical(
+                None, "obsisync is already running",
+                f"Another obsisync is using {where}.\n\n"
+                f"{holder[2] if holder and len(holder) > 2 else ''}\n\n"
+                "Quit it from its tray icon, or start this one with a different "
+                "--profile directory.")
+            raise SystemExit(1)
 
         state_db.init()
         self._hint_shown = False
@@ -229,6 +248,9 @@ class Application:
         self.session.prompt.provide(code)
 
     def _on_quit(self):
+        lock = getattr(self, "_lock", None)
+        if lock is not None:
+            lock.unlock()
         if self.window is not None:
             self.window.prepare_quit()
         self.bridge.shutdown()
