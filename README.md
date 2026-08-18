@@ -105,6 +105,22 @@ python -m gui.app                 # run the GUI
 python sync.py --help             # headless CLI
 ```
 
+## First run against an existing vault
+
+Pointing obsisync at a folder that already holds your vault, when iCloud holds it too, is the
+dangerous moment: nothing is tracked yet, so every file looks changed on both sides. Resolving that
+by timestamp would overwrite whichever side happens to have older mtimes — and files freshly copied
+onto a machine carry *new* mtimes, so the local copy would win even when iCloud held the newer note.
+
+obsisync refuses to guess. The setup wizard asks, and if you get there another way the daemon pauses
+and asks on the dashboard:
+
+- **They already match — just start tracking.** Transfers nothing. Files present on both sides with
+  the same size are recorded as in sync; anything that differs is listed as a conflict to resolve
+  afterwards. This is the only option that cannot lose data.
+- **Trust iCloud.** Differing files are downloaded over the local copy.
+- **Trust this computer.** Differing files are uploaded over the iCloud copy.
+
 ## Memory footprint
 
 This is a resident background app, so its footprint is treated as a feature. Measured on Linux

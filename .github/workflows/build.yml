@@ -45,6 +45,7 @@ jobs:
           python tests/test_auth_flow.py
           python tests/test_tray.py
           python tests/test_packaging.py
+          python tests/test_first_run.py
 
   build-linux:
     name: linux binary

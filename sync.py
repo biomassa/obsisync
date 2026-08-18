@@ -182,7 +182,9 @@ def clear_stats():
 
 
 @cli.command("import-from-iobsi")
-def import_from_iobsi():
+@click.option("--force", is_flag=True,
+              help="Overwrite existing obsisync config and state.")
+def import_from_iobsi(force):
     """Copy config, session and sync state from an existing iObsi install.
 
     Deliberately a copy, not a move: iObsi may still be installed and running
@@ -202,8 +204,9 @@ def import_from_iobsi():
     copied = []
     src_cfg = os.path.join(LEGACY_CONFIG_DIR, "config.json")
     dst_cfg = os.path.join(config_dir(), "config.json")
-    if os.path.exists(dst_cfg):
+    if os.path.exists(dst_cfg) and not force:
         click.echo(f"Refusing to overwrite existing config at {dst_cfg}", err=True)
+        click.echo("Re-run with --force to replace it.", err=True)
         sys.exit(1)
     cfg = json.load(open(src_cfg))
     cfg.pop("web_port", None)          # no web UI in obsisync
@@ -211,11 +214,20 @@ def import_from_iobsi():
         json.dump(cfg, f, indent=2)
     copied.append("config.json")
 
+    skipped = []
     for name in ("session", "sync_state.db"):
         src = os.path.join(LEGACY_CONFIG_DIR, name)
         dst = os.path.join(data_dir(), name)
-        if not os.path.exists(src) or os.path.exists(dst):
+        if not os.path.exists(src):
             continue
+        if os.path.exists(dst):
+            if not force:
+                # Never skip silently. Merely launching the app creates an empty
+                # sync_state.db, and quietly declining to replace it would leave
+                # the first cycle treating every file as new: mass conflicts.
+                skipped.append(name)
+                continue
+            (shutil.rmtree if os.path.isdir(dst) else os.remove)(dst)
         (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, dst)
         copied.append(name)
 
@@ -228,6 +240,15 @@ def import_from_iobsi():
             copied.append("keyring password")
 
     click.echo(f"Imported from iObsi: {', '.join(copied)}")
+    if skipped:
+        click.echo("")
+        click.echo(f"NOT imported, already present: {', '.join(skipped)}", err=True)
+        if "sync_state.db" in skipped:
+            click.echo(
+                "The existing sync database was kept. If it is empty (merely "
+                "starting the app creates one), the first sync will treat every "
+                "file as new and raise a conflict for each. Re-run with --force "
+                "to replace it.", err=True)
     click.echo(f"  config -> {config_dir()}")
     click.echo(f"  state  -> {data_dir()}")
     click.echo("\niObsi's own files were left untouched.")

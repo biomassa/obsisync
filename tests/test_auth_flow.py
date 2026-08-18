@@ -90,7 +90,8 @@ check("shutdown is safe before any daemon started",
 
 print("\n== wizard ==")
 import sync_engine
-from gui.wizard import SetupDialog, TwoFactorDialog, PAGE_CREDENTIALS, PAGE_TWOFA, PAGE_VAULT, PAGE_FOLDER
+from gui.wizard import (SetupDialog, TwoFactorDialog, PAGE_CREDENTIALS,
+                        PAGE_TWOFA, PAGE_VAULT, PAGE_FOLDER, PAGE_FIRST_SYNC)
 d = SetupDialog()
 check("opens on the credentials page", d.stack.currentIndex() == PAGE_CREDENTIALS)
 d._advance()
@@ -116,6 +117,36 @@ check("config written on finish",
 check("vault folder created", os.path.isdir(folder))
 check("password is not written into the config file",
       "password" not in open(config.CONFIG_FILE).read().lower())
+
+print("\n== first-sync page appears only for a non-empty folder ==")
+empty = os.path.join(S, "empty_vault"); os.makedirs(empty, exist_ok=True)
+check("empty folder needs no decision", not SetupDialog.folder_has_vault(empty))
+full = os.path.join(S, "full_vault"); os.makedirs(full, exist_ok=True)
+open(os.path.join(full, "note.md"), "w").write("x")
+check("folder with notes needs a decision", SetupDialog.folder_has_vault(full))
+# .obsidian/app.json is a real file the engine will try to reconcile, so its
+# guard would fire and show the dashboard banner. The wizard must agree, or the
+# two disagree about whether a decision is needed.
+dot = os.path.join(S, "dot_only"); os.makedirs(os.path.join(dot, ".obsidian"), exist_ok=True)
+open(os.path.join(dot, ".obsidian", "app.json"), "w").write("{}")
+check("a vault with only .obsidian config still needs a decision",
+      SetupDialog.folder_has_vault(dot))
+hidden = os.path.join(S, "hidden_only"); os.makedirs(hidden, exist_ok=True)
+open(os.path.join(hidden, ".DS_Store"), "w").write("x")
+check("a folder of only hidden files counts as empty",
+      not SetupDialog.folder_has_vault(hidden))
+
+d2 = SetupDialog()
+d2._on_vaults(["V"]); d2.manual_vault.setText("V"); d2._advance()
+d2.folder.setText(full); d2._advance()
+check("wizard branches to the first-sync page", d2.stack.currentIndex() == PAGE_FIRST_SYNC)
+check("adopt is the preselected default", d2.first_sync_mode() == "adopt")
+d2.mode_remote.setChecked(True)
+check("choosing iCloud is reported", d2.first_sync_mode() == "prefer-remote")
+d2.mode_adopt.setChecked(True)
+d2._advance()
+saved2 = config.load()
+check("chosen mode written to config", saved2.get("first_run_mode") == "adopt", str(saved2.get("first_run_mode")))
 
 t2 = TwoFactorDialog()
 t2.code.setText("111222")

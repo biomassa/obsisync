@@ -33,6 +33,7 @@ class EngineBridge(QObject):
     conflictsChanged = Signal(int)      # unresolved conflict count
     pendingDeletionsChanged = Signal(list)
     pendingIgnoredChanged = Signal(list)
+    pendingFirstRunChanged = Signal(dict)
     authExpired = Signal(str)           # reason; GUI should prompt for re-auth
 
     def __init__(self, parent=None):
@@ -68,12 +69,14 @@ class EngineBridge(QObject):
         stats = sync_engine._load_stats()
         pending_deletions = sync_engine.get_pending_deletions()
         pending_ignored = sync_engine.get_pending_ignored()
+        pending_first_run = sync_engine.get_pending_first_run()
 
         status = dict(stats)
         status["paused"] = sync_engine.is_paused()
         status["running"] = sync_engine.is_running()
         status["pending_deletions"] = len(pending_deletions)
         status["pending_ignored"] = len(pending_ignored)
+        status["pending_first_run"] = bool(pending_first_run)
 
         if status != self._last.get("status"):
             self._last["status"] = status
@@ -86,6 +89,10 @@ class EngineBridge(QObject):
         if pending_ignored != self._last.get("ignored"):
             self._last["ignored"] = pending_ignored
             self.pendingIgnoredChanged.emit(pending_ignored)
+
+        if pending_first_run != self._last.get("first_run"):
+            self._last["first_run"] = pending_first_run
+            self.pendingFirstRunChanged.emit(pending_first_run)
 
     # ── lifecycle ───────────────────────────────────
 

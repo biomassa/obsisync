@@ -11,9 +11,9 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QProgressBar, QPushButton, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QButtonGroup, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QProgressBar, QPushButton,
+    QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import config
@@ -23,7 +23,7 @@ from auth import (
 )
 from paths import default_vault_path
 
-PAGE_CREDENTIALS, PAGE_TWOFA, PAGE_VAULT, PAGE_FOLDER = range(4)
+PAGE_CREDENTIALS, PAGE_TWOFA, PAGE_VAULT, PAGE_FOLDER, PAGE_FIRST_SYNC = range(5)
 
 
 class _Worker(QObject):
@@ -104,6 +104,7 @@ class SetupDialog(QDialog):
         self._build_twofa()
         self._build_vault()
         self._build_folder()
+        self._build_first_sync()
 
         self.busy = QProgressBar()
         self.busy.setRange(0, 0)
@@ -183,6 +184,53 @@ class SetupDialog(QDialog):
         box.addStretch()
         self.stack.addWidget(page)
 
+    def _build_first_sync(self):
+        page = QWidget()
+        box = QVBoxLayout(page)
+        self.first_sync_summary = QLabel()
+        self.first_sync_summary.setWordWrap(True)
+        box.addWidget(self.first_sync_summary)
+
+        # There is no safe default here: the app cannot tell whether the local
+        # copy or the iCloud copy is the one you want to keep.
+        self.first_sync_group = QButtonGroup(page)
+        self.mode_adopt = QRadioButton(
+            "They already match \u2014 just start tracking them")
+        self.mode_remote = QRadioButton(
+            "Trust iCloud \u2014 replace differing local files")
+        self.mode_local = QRadioButton(
+            "Trust this computer \u2014 replace differing files on iCloud")
+        self.mode_adopt.setChecked(True)
+        for i, btn in enumerate((self.mode_adopt, self.mode_remote, self.mode_local)):
+            self.first_sync_group.addButton(btn, i)
+            box.addWidget(btn)
+
+        note = QLabel(
+            "The first option never transfers or overwrites anything. Files that "
+            "differ are listed as conflicts for you to resolve afterwards.")
+        note.setWordWrap(True)
+        note.setEnabled(False)
+        box.addWidget(note)
+        box.addStretch()
+        self.stack.addWidget(page)
+
+    def first_sync_mode(self):
+        if self.mode_remote.isChecked():
+            return "prefer-remote"
+        if self.mode_local.isChecked():
+            return "prefer-local"
+        return "adopt"
+
+    @staticmethod
+    def folder_has_vault(folder):
+        """True if the folder already holds files we would have to reconcile."""
+        if not os.path.isdir(folder):
+            return False
+        for _root, _dirs, files in os.walk(folder):
+            if any(not f.startswith(".") for f in files):
+                return True
+        return False
+
     def _browse(self):
         chosen = QFileDialog.getExistingDirectory(
             self, "Choose a folder for the vault", self.folder.text())
@@ -233,7 +281,20 @@ class SetupDialog(QDialog):
             if not folder:
                 self.message.setText("Choose a folder.")
                 return
+            if self.folder_has_vault(folder):
+                self._folder = folder
+                self.first_sync_summary.setText(
+                    f"<b>{folder}</b> already contains files, and your iCloud vault "
+                    "does too. Nothing is tracked yet, so obsisync cannot tell which "
+                    "copy you want to keep. Choose how to start:")
+                self.stack.setCurrentIndex(PAGE_FIRST_SYNC)
+                self.next_btn.setText("Finish")
+                self.message.setText("")
+                return
             self._finish(folder)
+
+        elif page == PAGE_FIRST_SYNC:
+            self._finish(self._folder)
 
     def _on_authenticated(self, api):
         self.api = api
@@ -269,6 +330,9 @@ class SetupDialog(QDialog):
         cfg["apple_id"] = self._email
         cfg["vault_name"] = self._vault_name
         cfg["local_path"] = folder
+        # Consumed once by the first sync, then cleared.
+        cfg["first_run_mode"] = (
+            self.first_sync_mode() if self.folder_has_vault(folder) else "adopt")
         config.save(cfg)
         os.makedirs(folder, exist_ok=True)
         sync_engine.log("INFO", f"Setup complete — vault '{self._vault_name}'")

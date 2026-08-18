@@ -42,6 +42,13 @@ _pending_deletions_lock = threading.Lock()
 _pending_ignored = []
 _pending_ignored_lock = threading.Lock()
 
+# Set when tracking is empty but both sides already hold files. The cycle refuses
+# to guess in that situation: adopting, downloading and uploading are all
+# defensible and only the user knows which is right.
+FIRST_RUN_MODES = ("adopt", "prefer-remote", "prefer-local")
+_pending_first_run = {}
+_pending_first_run_lock = threading.Lock()
+
 _web_log_listeners = []
 
 _LOG_LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARN": 2, "ERROR": 3}
@@ -268,6 +275,102 @@ def unignore_pending(cfg=None):
     return {"removed": culprits, "still_ignored": still_ignored}
 
 
+def get_pending_first_run():
+    with _pending_first_run_lock:
+        return dict(_pending_first_run)
+
+
+def _clear_pending_first_run():
+    with _pending_first_run_lock:
+        _pending_first_run.clear()
+
+
+def reconcile_first_run(api, vault_node, cfg, mode):
+    """Seed an empty database against a vault that already exists on both sides.
+
+    Without this the first cycle sees every file as changed on both sides, calls
+    each one a conflict and resolves it by mtime — which will happily overwrite
+    newer iCloud content with a local copy whose mtime is merely fresher because
+    the files were recently copied onto the machine.
+
+    ``adopt`` transfers nothing: files present on both sides with the same size
+    are simply recorded as in sync. It is the only mode that cannot lose data.
+    """
+    if mode not in FIRST_RUN_MODES:
+        raise ValueError(f"unknown first-run mode: {mode}")
+
+    local_path = cfg["local_path"]
+    extra_ignore = cfg.get("ignore_patterns", [])
+    local_files = scan_local(local_path, extra_ignore)
+    remote_files, _ = scan_remote(vault_node, force=True, extra_ignore=extra_ignore)
+
+    both = sorted(set(local_files) & set(remote_files))
+    adopted = downloaded = uploaded = differing = errors = 0
+
+    log("INFO", f"First run ({mode}): {len(both)} file(s) present on both sides")
+
+    for rel_path in both:
+        local_info, remote_info = local_files[rel_path], remote_files[rel_path]
+        abs_path = os.path.join(local_path, rel_path)
+        same_size = remote_info.get("size") == local_info.get("size")
+
+        try:
+            if mode == "adopt" and not same_size:
+                # Genuinely different. Record it and let the user choose rather
+                # than picking a winner by timestamp.
+                _record_first_run_conflict(rel_path, local_info, remote_info)
+                differing += 1
+                continue
+
+            if mode == "prefer-remote" and not same_size:
+                node = _resolve_node(vault_node, rel_path)
+                if node:
+                    _download_file(node, abs_path)
+                    downloaded += 1
+            elif mode == "prefer-local" and not same_size:
+                _upload_file(vault_node, rel_path, abs_path, api)
+                uploaded += 1
+
+            h = hash_file_head(abs_path)
+            upsert_state(
+                rel_path,
+                local_mtime=local_info["mtime"],
+                local_hash=h or "",
+                remote_etag=remote_info.get("etag", ""),
+                remote_mtime=remote_info["mtime"],
+                remote_size=remote_info.get("size", 0),
+                last_sync_hash=h or "",
+            )
+            adopted += 1
+        except Exception as e:
+            errors += 1
+            log("ERROR", f"First run failed for {rel_path}: {e}")
+
+    log("INFO",
+        f"First run complete: {adopted} tracked, {downloaded} downloaded, "
+        f"{uploaded} uploaded, {differing} left as conflicts, {errors} errors")
+
+    # Files on only one side need no decision — the normal cycle uploads or
+    # downloads them as new.
+    _clear_pending_first_run()
+    resume()
+    return {"adopted": adopted, "downloaded": downloaded, "uploaded": uploaded,
+            "differing": differing, "errors": errors}
+
+
+def _record_first_run_conflict(rel_path, local_info, remote_info):
+    from state_db import upsert_conflict
+    upsert_conflict(
+        rel_path,
+        local_mtime=local_info.get("mtime", 0),
+        remote_mtime=remote_info.get("mtime", 0),
+        local_hash=local_info.get("hash", ""),
+        remote_hash=remote_info.get("etag", ""),
+        local_preview="", remote_preview="",
+    )
+    log("INFO", f"First run: differs on both sides, left for you to resolve: {rel_path}")
+
+
 def is_running():
     return _sync_running.is_set()
 
@@ -478,6 +581,28 @@ def _run_sync_cycle(api, vault_node, cfg, force=False):
 
     local_files = scan_local(local_path, extra_ignore)
     remote_files, remote_fresh = scan_remote(vault_node, force=force, extra_ignore=extra_ignore)
+
+    # ── First-run guard ──
+    # An empty database against a vault that already exists on both sides means
+    # every file looks changed on both sides. Resolving that by mtime would
+    # overwrite whichever side happens to have older timestamps, so refuse to
+    # guess and wait for an explicit decision instead.
+    if not all_states() and local_files and remote_files:
+        overlap = set(local_files) & set(remote_files)
+        if overlap:
+            with _pending_first_run_lock:
+                _pending_first_run.clear()
+                _pending_first_run.update({
+                    "both": len(overlap),
+                    "local_only": len(set(local_files) - set(remote_files)),
+                    "remote_only": len(set(remote_files) - set(local_files)),
+                })
+            log("ERROR",
+                f"First run: {len(overlap)} file(s) exist both locally and on iCloud "
+                "with nothing tracked yet. Sync is paused until you choose how to "
+                "reconcile them.")
+            _sync_paused.set()
+            return
 
     # A tracked file that now matches an ignore pattern drops out of BOTH scans. Park it
     # for the user instead of guessing: untracking, deleting the remote copy and keeping

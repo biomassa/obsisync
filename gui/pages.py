@@ -146,6 +146,16 @@ class DashboardPage(QWidget):
         )
         layout.addWidget(self.deletions)
 
+        self.first_run = AlertBanner(
+            "First sync — nothing tracked yet",
+            "Files exist both here and on iCloud, but nothing is tracked, so "
+            "obsisync cannot tell which copy to keep. Sync is paused until you choose.",
+            [("adopt", "They already match — start tracking"),
+             ("prefer-remote", "Trust iCloud"),
+             ("prefer-local", "Trust this computer")],
+        )
+        layout.addWidget(self.first_run)
+
         self.ignored = AlertBanner(
             "Tracked files now match an ignore pattern",
             "These files were being synced but are now excluded by your ignore patterns. "
@@ -183,6 +193,24 @@ class DashboardPage(QWidget):
             lambda: c.run_local_action(sync_engine.unignore_pending, self.ignored))
         self.ignored.button("delete_remote").clicked.connect(self._confirm_delete_remote)
 
+        for mode in ("adopt", "prefer-remote", "prefer-local"):
+            self.first_run.button(mode).clicked.connect(
+                lambda _=False, m=mode: self._resolve_first_run(m))
+
+    def _resolve_first_run(self, mode):
+        if mode != "adopt":
+            side = "iCloud" if mode == "prefer-remote" else "this computer"
+            other = "local" if mode == "prefer-remote" else "iCloud"
+            if QMessageBox.question(
+                    self, "Replace differing files?",
+                    f"Files that differ will be replaced with the copy from {side}, "
+                    f"overwriting the {other} version. Continue?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+        self._controller.run_icloud_action(
+            lambda api, node, cfg: sync_engine.reconcile_first_run(api, node, cfg, mode),
+            self.first_run)
+
     def _confirm_delete_remote(self):
         answer = QMessageBox.question(
             self, "Delete from iCloud?",
@@ -211,6 +239,16 @@ class DashboardPage(QWidget):
 
     def on_pending_ignored(self, paths):
         self.ignored.set_paths(paths)
+
+    def on_pending_first_run(self, info):
+        if not info:
+            self.first_run.set_paths([])
+            return
+        self.first_run.set_paths([
+            f"{info.get('both', 0)} file(s) on both sides",
+            f"{info.get('local_only', 0)} only here",
+            f"{info.get('remote_only', 0)} only on iCloud",
+        ])
 
 
 class LogsPage(QWidget):

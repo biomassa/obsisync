@@ -1,5 +1,6 @@
 """GUI entry point: setup if needed, then connect, then run the daemon."""
 import sys
+import threading
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -114,8 +115,40 @@ class Application:
 
     def _on_connected(self, api, vault_node):
         self.window.controller.attach_session(api, vault_node, self.cfg)
+        self._consume_first_run_mode(api, vault_node)
         self.session.start_daemon(self.cfg)
         self.window.statusBar().showMessage("Connected to iCloud", 4000)
+
+    def _consume_first_run_mode(self, api, vault_node):
+        """Apply the choice made in the wizard, once, before the daemon starts.
+
+        Running it before the daemon matters: otherwise the first cycle hits the
+        first-run guard and pauses, asking a question the user already answered.
+        """
+        mode = self.cfg.get("first_run_mode")
+        if not mode:
+            return
+        from state_db import all_states
+        if all_states():
+            # Something is already tracked, so there is nothing to reconcile.
+            self._clear_first_run_mode()
+            return
+
+        def work():
+            try:
+                sync_engine.reconcile_first_run(api, vault_node, self.cfg, mode)
+            except Exception as exc:
+                sync_engine.log("ERROR", f"First-run reconciliation failed: {exc}")
+            finally:
+                self._clear_first_run_mode()
+
+        threading.Thread(target=work, name="first-run", daemon=True).start()
+
+    def _clear_first_run_mode(self):
+        cfg = config.load()
+        if cfg.pop("first_run_mode", None) is not None:
+            config.save(cfg)
+        self.cfg.pop("first_run_mode", None)
 
     def _on_failed(self, reason):
         sync_engine.log("ERROR", f"Not connected: {reason}")

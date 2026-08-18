@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self.bridge.statusChanged.connect(self._on_status)
         self.bridge.pendingDeletionsChanged.connect(self.dashboard.on_pending_deletions)
         self.bridge.pendingIgnoredChanged.connect(self.dashboard.on_pending_ignored)
+        self.bridge.pendingFirstRunChanged.connect(self.dashboard.on_pending_first_run)
         self.settings.saved.connect(self.conflicts.refresh)
 
         # The ring buffer already holds recent history; show it rather than
