@@ -1,0 +1,245 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Nuitka 4.1 reports Python 3.14 as only experimentally supported and recommends
+# 3.13, so builds are pinned rather than tracking the newest interpreter.
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      # The Qt tests are headless; Linux runners have no display server.
+      - name: Run test suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python tests/test_engine.py
+          python tests/test_portability.py
+          python tests/test_vendor.py
+          python tests/test_bridge.py
+          python tests/test_gui.py
+          python tests/test_auth_flow.py
+          python tests/test_tray.py
+
+  build-linux:
+    name: linux binary
+    needs: test
+    runs-on: ubuntu-22.04     # oldest supported glibc = widest compatibility
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: System build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache libfuse2 desktop-file-utils
+          # Qt needs these at runtime even for a headless smoke test.
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+                                  libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]" -e .
+          # Nuitka needs patchelf for standalone Linux builds; the wheel avoids
+          # depending on the distro package.
+          pip install patchelf
+
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/Nuitka
+            ~/.cache/ccache
+          key: nuitka-linux-${{ env.PYTHON_VERSION }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: nuitka-linux-${{ env.PYTHON_VERSION }}-
+
+      - name: Build
+        run: python build.py --output-dir dist
+
+      # A compiled binary fails in ways source never does — a missing dynamic
+      # import or data file only shows up here.
+      - name: Smoke test the binary
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ./dist/obsisync --version
+          ./dist/obsisync --headless --help
+
+      - name: Package AppImage
+        run: |
+          set -eux
+          APPDIR=build/obsisync.AppDir
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp dist/obsisync "$APPDIR/usr/bin/obsisync"
+          cp assets/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/obsisync.png"
+          cp assets/icon.png "$APPDIR/obsisync.png"
+          cat > "$APPDIR/usr/share/applications/obsisync.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=obsisync
+          Comment=Sync an Obsidian vault with iCloud Drive
+          Exec=obsisync
+          Icon=obsisync
+          Categories=Utility;
+          Terminal=false
+          EOF
+          cp "$APPDIR/usr/share/applications/obsisync.desktop" "$APPDIR/obsisync.desktop"
+          desktop-file-validate "$APPDIR/obsisync.desktop"
+          printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/obsisync" "$@"\n' \
+            > "$APPDIR/AppRun"
+          chmod +x "$APPDIR/AppRun"
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage --appimage-extract-and-run "$APPDIR" \
+            dist/obsisync-x86_64.AppImage
+
+      - name: Package .deb
+        run: |
+          set -eux
+          PKG=build/deb
+          mkdir -p "$PKG/DEBIAN" "$PKG/usr/bin" "$PKG/usr/share/applications" \
+                   "$PKG/usr/share/icons/hicolor/256x256/apps"
+          cp dist/obsisync "$PKG/usr/bin/obsisync"
+          cp assets/icon.png "$PKG/usr/share/icons/hicolor/256x256/apps/obsisync.png"
+          cp build/obsisync.AppDir/usr/share/applications/obsisync.desktop \
+             "$PKG/usr/share/applications/obsisync.desktop"
+          cat > "$PKG/DEBIAN/control" <<EOF
+          Package: obsisync
+          Version: ${GITHUB_REF_NAME#v}-1
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: biomassa <kustota@gmail.com>
+          Description: Sync an Obsidian vault with iCloud Drive
+           Native desktop client for keeping an Obsidian vault in sync between
+           iCloud Drive and a Linux machine.
+          EOF
+          dpkg-deb --build "$PKG" "dist/obsisync_${GITHUB_REF_NAME#v}_amd64.deb"
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name == 'main' && 'v0.1.0' || github.ref_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/obsisync-x86_64.AppImage
+            dist/*.deb
+          if-no-files-found: error
+
+  build-arch:
+    name: arch package
+    needs: build-linux
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the built binary
+        uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: dist
+      - name: Build package
+        run: |
+          set -eux
+          # makepkg refuses to run as root.
+          useradd -m builder && chown -R builder .
+          chmod +x dist/obsisync-x86_64.AppImage
+          su builder -c 'makepkg -f --nodeps --noconfirm' || true
+          ls -la *.pkg.tar.zst 2>/dev/null || echo "no package produced"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch
+          path: "*.pkg.tar.zst"
+          if-no-files-found: warn
+
+  build-windows:
+    name: windows binary
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]" -e .
+
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Nuitka\Nuitka\Cache
+          key: nuitka-win-${{ env.PYTHON_VERSION }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: nuitka-win-${{ env.PYTHON_VERSION }}-
+
+      - name: Build
+        run: python build.py --output-dir dist
+
+      - name: Smoke test the binary
+        run: |
+          .\dist\obsisync.exe --version
+          .\dist\obsisync.exe --headless --help
+
+      - name: Build installer
+        run: makensis /DVERSION=${{ github.ref_name }} packaging\windows\installer.nsi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/obsisync.exe
+            dist/obsisync-setup-*.exe
+          if-no-files-found: error
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows, build-arch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          body: |
+            **Back up your vault before using this.** It moves and deletes files.
+
+            - Windows: `obsisync-setup-*.exe` (installer) or `obsisync.exe` (standalone)
+            - Linux: `obsisync-x86_64.AppImage` (any distro), `.deb`, or `.pkg.tar.zst`

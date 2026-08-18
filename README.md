@@ -28,7 +28,7 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 | Native GUI (dashboard, logs, conflicts, settings) | working from source |
 | Setup wizard and 2FA re-auth | working from source |
 | Tray, autostart, notifications | working from source |
-| Installers (Windows / AppImage / deb / Arch) | not started |
+| Installers (Windows / AppImage / deb / Arch) | written, CI not yet exercised |
 
 ## Roadmap
 
@@ -37,7 +37,7 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 2. ~~**GUI** — PySide6 main window: stats, logs, conflicts, settings.~~ Done.
 3. ~~**Setup wizard and re-auth** — including the 2FA prompt.~~ Done.
 4. ~~**Background behaviour** — tray icon, close-hides-to-tray, start on login, notifications.~~ Done.
-5. **Packaging** — Nuitka-compiled binaries, built in GitHub Actions.
+5. ~~**Packaging** — Nuitka-compiled binaries, built in GitHub Actions.~~ Written; CI not yet run.
 
 ## Design
 
@@ -69,6 +69,22 @@ gui/
   tray.py        tray icon, menu, notifications
   autostart.py   start-on-login (registry / XDG)
 ```
+
+## Building
+
+```bash
+pip install -e ".[build]"
+python build.py                # -> dist/obsisync  (~48 MB, self-contained)
+./dist/obsisync --version
+./dist/obsisync --headless --help
+```
+
+`build.py` holds the Nuitka flags so a local build and a CI release cannot drift. CI
+(`.github/workflows/build.yml`) runs the tests on Linux and Windows, then builds the binary,
+an AppImage, a `.deb`, an Arch package and a Windows NSIS installer; pushing a `v*` tag
+publishes a GitHub Release.
+
+Python is pinned to 3.13 for builds — Nuitka 4.1 reports 3.14 as only experimentally supported.
 
 ## Development
 
