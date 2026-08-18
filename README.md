@@ -47,7 +47,8 @@ chmod +x obsisync-x86_64.AppImage
 ./obsisync-x86_64.AppImage
 ```
 
-You can also install the `.deb` or the Arch package, or run the plain `obsisync` binary.
+You can also install the `.deb` or the Arch package. To build the binary yourself, read
+[Build from source](#build-from-source).
 
 On Windows, run `obsisync-setup-*.exe`. The installer is per-user, so it does not need
 administrator rights. The binary has no code signature, so SmartScreen shows a warning on the first
@@ -114,22 +115,110 @@ obsisync --headless import-from-iobsi
 
 ## Build from source
 
+These steps make a single self-contained binary of about 50 MB on Linux. The binary needs no
+Python and no Qt on the computer that runs it.
+
+### 1. Install the build tools
+
+You need Python 3.11 or later, a C compiler and `patchelf`. Nuitka compiles the program to C, and
+`patchelf` corrects the library paths afterwards.
+
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,build]"
+# Arch
+sudo pacman -S --needed base-devel python
 
-python -m gui.app                       # run the GUI
-python sync.py --help                   # headless CLI
-python spike/demo.py                    # UI preview with sample data, no iCloud
-
-python build.py                         # -> dist/obsisync (~50 MB, self-contained)
+# Debian or Ubuntu
+sudo apt install build-essential python3-dev python3-venv
 ```
+
+Do not install `patchelf` from your package manager. `pip` supplies it in the next step, which
+keeps the version the same on every machine.
+
+### 2. Get the source and make an environment
+
+```bash
+git clone https://github.com/biomassa/obsisync.git
+cd obsisync
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,build]"
+pip install patchelf
+```
+
+### 3. Run the tests
+
+Run the tests before you build. They take about a minute, and they need no iCloud account.
+
+```bash
+QT_QPA_PLATFORM=offscreen python tests/test_engine.py
+QT_QPA_PLATFORM=offscreen python tests/test_portability.py
+```
+
+The `QT_QPA_PLATFORM=offscreen` variable lets the Qt tests run without a display.
+
+### 4. Build
+
+```bash
+python build.py
+```
+
+The build takes 8 to 15 minutes, because Nuitka compiles the program and Qt to C. Most of that time
+is the C compiler. Install `ccache` first if you plan to build more than once.
+
+The result is `dist/obsisync`. Test it:
+
+```bash
+./dist/obsisync --version
+./dist/obsisync --headless --help
+```
+
+### 5. Install it
+
+```bash
+install -Dm755 dist/obsisync ~/.local/bin/obsisync
+install -Dm644 assets/icon.png \
+  ~/.local/share/icons/hicolor/256x256/apps/obsisync.png
+```
+
+To get a desktop entry, write this file to
+`~/.local/share/applications/obsisync.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=obsisync
+Comment=Sync an Obsidian vault with iCloud Drive
+Exec=obsisync
+Icon=obsisync
+Categories=Utility;
+Terminal=false
+```
+
+### Run from source instead
+
+You do not have to compile the program to use it:
+
+```bash
+python -m gui.app                       # the GUI
+python sync.py --help                   # the headless CLI
+python spike/demo.py                    # UI preview, sample data, no iCloud
+```
+
+This needs no C compiler, and it uses about 20 MB less memory than the compiled binary, because a
+compiled module occupies more memory than bytecode. It does need the virtual environment, so it
+suits development more than daily use.
+
+### Notes on the build
 
 `build.py` holds the Nuitka options, so a local build and a CI release cannot differ. CI runs the
 tests on Linux and Windows, then builds the binary, an AppImage, a `.deb`, an Arch package and a
 Windows NSIS installer. A `v*` tag publishes a GitHub Release.
 
-The build pins Python to 3.13, because Nuitka 4.1 supports 3.14 only as an experiment.
+The build pins Python to 3.13, because Nuitka 4.1 supports 3.14 only as an experiment. Later
+versions work, but Nuitka calls them experimental.
+
+On Linux the binary unpacks itself into `~/.cache/obsisync/` on the first start. Delete that
+directory after you replace the binary with a different version.
 
 ### Tests
 

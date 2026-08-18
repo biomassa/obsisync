@@ -182,7 +182,6 @@ jobs:
           name: linux
           path: |
             dist/obsisync-x86_64.AppImage
-            dist/obsisync
             dist/*.deb
           if-no-files-found: error
 
@@ -303,7 +302,9 @@ jobs:
             unpacked, so it does not hold its payload in RAM.
 
             - Linux: `obsisync-x86_64.AppImage`, or `.deb` / `.pkg.tar.zst` to install
-              system-wide, or the bare `obsisync` binary
+              system-wide
             - Windows: `obsisync-setup-*.exe` (installer) or `obsisync.exe` (standalone)
+
+            To build the Linux binary yourself, see "Build from source" in the README.
 
             Back up your vault before first use.
