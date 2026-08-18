@@ -293,36 +293,36 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # The windows job still builds and smoke-tests the binary, and the run
+      # keeps it as an artifact. It is not published, because nobody has run it
+      # on real hardware and a release asset reads as "this works".
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/linux/**/*
+            artifacts/arch/**/*
           generate_release_notes: true
           body: |
             **Back up your vault before you use this.** It moves and deletes files
             in your notes.
 
+            ## ⚠️ Linux only for now
+
+            The Windows build compiles and starts, but nobody tested it on real
+            hardware, so it is not published here. Only Linux downloads are below.
+
             ### Which file do I download?
 
-            | | Recommended | Portable |
-            |---|---|---|
-            | **Windows** | `obsisync-setup-VERSION.exe` | `obsisync.exe` |
-            | **Linux** | `obsisync-x86_64.AppImage` | `obsisync-x86_64.AppImage` |
+            **`obsisync-x86_64.AppImage` is the one to take.** It runs on any
+            distribution and needs no installation. The system mounts it instead of
+            unpacking it, so it does not hold its payload in memory.
 
-            **Windows.** The installer puts the program in your user folder and adds
-            a Start Menu entry. It also gives you an entry in Add/Remove Programs, and
-            it needs no administrator rights.
+            ```bash
+            chmod +x obsisync-x86_64.AppImage
+            ./obsisync-x86_64.AppImage
+            ```
 
-            Use `obsisync.exe` instead to run the program without installing it, from
-            a USB stick for example. Only the installer removes the start-on-login
-            registry entry again, so prefer the installer if you plan to use that
-            setting.
-
-            Windows shows a SmartScreen warning on the first start, because the
-            program has no code signature. Select **More info**, then **Run anyway**.
-
-            **Linux.** The AppImage runs on any distribution and needs no
-            installation. The system mounts it instead of unpacking it, so it does not
-            hold its payload in memory. Install the `.deb` or the Arch package instead
-            to put the program in your system directories.
+            Install the `.deb` or the Arch package instead to put the program in your
+            system directories.
 
             To compile it yourself, read "Build from source" in the README.
