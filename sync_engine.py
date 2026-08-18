@@ -1019,6 +1019,10 @@ def _purge_orphaned_states(local_files, remote_files, protected=()):
 
 def daemon_loop(api, vault_node, cfg):
     db_init()
+    # The remote cache must expire within one poll, or a change made on another
+    # device waits for a later cycle.
+    from scanner import set_cache_age
+    set_cache_age(cfg.get("poll_interval", 120))
     global _current_log_level
     _current_log_level = cfg.get("log_level", "INFO")
     poll_interval = cfg.get("poll_interval", 120)

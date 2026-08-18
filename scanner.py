@@ -90,6 +90,26 @@ last_force_refresh = 0.0
 _force_next = False
 _FORCE_TIMEOUT = 60
 
+# How long the cached remote tree stays usable. The daemon sets this from
+# poll_interval; the default matches the default interval.
+#
+# It must never equal the poll interval exactly. The daemon wakes every
+# poll_interval seconds, so the elapsed time at each wake is exactly that value,
+# and a strict "greater than" comparison then fails on every other cycle. The
+# effect was a remote refresh every second cycle, so a note added on another
+# device took up to twice the poll interval to appear.
+_max_cache_age = 120.0
+_MIN_REFRESH_GAP_FRACTION = 0.5
+
+
+def set_cache_age(poll_interval):
+    """Tie the cache lifetime to the daemon's poll interval."""
+    global _max_cache_age
+    try:
+        _max_cache_age = max(5.0, float(poll_interval))
+    except (TypeError, ValueError):
+        pass
+
 _EXPLORE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
@@ -112,8 +132,14 @@ def scan_remote(vault_node, force=False, extra_ignore=None):
     now = time.time()
     forced = _force_next
     _force_next = False
-    do_force = force or forced or (now - last_force_refresh) > 120
-    if do_force and not force and not forced and (now - last_force_refresh) < 60:
+    age = now - last_force_refresh
+    # A small tolerance so a wake that lands fractionally early still counts;
+    # otherwise scheduling jitter alone can skip a whole cycle.
+    due = age >= (_max_cache_age - 1.0)
+    do_force = force or forced or due
+    # Guard against a burst of timer-driven cycles hammering iCloud. Explicit
+    # and invalidated refreshes are never held back.
+    if do_force and not force and not forced and age < _max_cache_age * _MIN_REFRESH_GAP_FRACTION:
         do_force = False
     fresh = False
     if do_force:

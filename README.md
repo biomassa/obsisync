@@ -98,7 +98,8 @@ obsisync does not guess. It asks, and it offers three answers:
 
 The daemon watches your vault with `watchdog`, so it sees a local edit immediately. It also scans
 iCloud Drive every 120 seconds, because iCloud Drive has no webhooks and polling is the only
-option.
+option. A note that you add on another device therefore appears within one poll interval. Change
+`poll_interval` in the settings to scan more often.
 
 Three guards protect your files:
 
