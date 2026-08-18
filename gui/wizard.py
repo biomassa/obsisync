@@ -12,8 +12,8 @@ import threading
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QProgressBar, QPushButton,
-    QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar,
+    QPushButton, QRadioButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import config
@@ -131,6 +131,24 @@ class SetupDialog(QDialog):
             "Your password is kept in the system credential store, never in a file.")
         intro.setWordWrap(True)
         form.addRow(intro)
+
+        # An existing iObsi install already holds everything needed, including a
+        # populated sync database — importing it avoids signing in again AND
+        # avoids the first-run reconciliation entirely.
+        import migrate
+        self._migrate_info = migrate.describe() if migrate.available() else None
+        if self._migrate_info:
+            tracked = self._migrate_info.get("tracked")
+            summary = QLabel(
+                "An existing <b>iObsi</b> installation was found"
+                + (f" tracking {tracked} files" if tracked else "")
+                + ". Importing it carries over your account, vault and sync "
+                  "history, so there is nothing to sign in to or reconcile.")
+            summary.setWordWrap(True)
+            self.import_btn = QPushButton("Import from iObsi")
+            self.import_btn.clicked.connect(self._do_import)
+            form.addRow(summary)
+            form.addRow("", self.import_btn)
         self.email = QLineEdit()
         self.email.setPlaceholderText("you@example.com")
         self.password = QLineEdit()
@@ -139,6 +157,26 @@ class SetupDialog(QDialog):
         form.addRow("Password", self.password)
         form.addRow(QLabel(""))          # absorb slack instead of stretching fields
         self.stack.addWidget(page)
+
+    def _do_import(self):
+        import migrate
+        self._set_busy(True, "Importing from iObsi…")
+        try:
+            # force: launching the app creates an empty database at the
+            # destination, and keeping that would defeat the whole point.
+            result = migrate.import_from_iobsi(force=True)
+        except Exception as exc:
+            self._set_busy(False)
+            self.message.setText(f"Import failed: {exc}")
+            return
+        self._set_busy(False)
+        sync_engine.log("INFO", f"Imported from iObsi: {', '.join(result['copied'])}")
+        QMessageBox.information(
+            self, "Imported",
+            "Settings and sync history were copied from iObsi.\n\n"
+            "iObsi's own files were left untouched — do not run both against the "
+            "same vault at the same time.")
+        self.accept()
 
     def _build_twofa(self):
         page = QWidget()

@@ -191,66 +191,34 @@ def import_from_iobsi(force):
     against its own directory, and nothing here should break it. Note that
     running both daemons against the same vault at once is a bad idea.
     """
-    import shutil
-    from paths import LEGACY_CONFIG_DIR, legacy_config_exists, config_dir, data_dir
+    import migrate
+    from paths import LEGACY_CONFIG_DIR, config_dir, data_dir
 
-    if not legacy_config_exists():
+    try:
+        result = migrate.import_from_iobsi(force=force)
+    except FileNotFoundError:
         click.echo(f"No iObsi config found at {LEGACY_CONFIG_DIR}", err=True)
         sys.exit(1)
-
-    os.makedirs(config_dir(), exist_ok=True)
-    os.makedirs(data_dir(), exist_ok=True)
-
-    copied = []
-    src_cfg = os.path.join(LEGACY_CONFIG_DIR, "config.json")
-    dst_cfg = os.path.join(config_dir(), "config.json")
-    if os.path.exists(dst_cfg) and not force:
-        click.echo(f"Refusing to overwrite existing config at {dst_cfg}", err=True)
+    except FileExistsError as exc:
+        click.echo(f"Refusing to overwrite existing config at {exc}", err=True)
         click.echo("Re-run with --force to replace it.", err=True)
         sys.exit(1)
-    cfg = json.load(open(src_cfg))
-    cfg.pop("web_port", None)          # no web UI in obsisync
-    with open(dst_cfg, "w") as f:
-        json.dump(cfg, f, indent=2)
-    copied.append("config.json")
 
-    skipped = []
-    for name in ("session", "sync_state.db"):
-        src = os.path.join(LEGACY_CONFIG_DIR, name)
-        dst = os.path.join(data_dir(), name)
-        if not os.path.exists(src):
-            continue
-        if os.path.exists(dst):
-            if not force:
-                # Never skip silently. Merely launching the app creates an empty
-                # sync_state.db, and quietly declining to replace it would leave
-                # the first cycle treating every file as new: mass conflicts.
-                skipped.append(name)
-                continue
-            (shutil.rmtree if os.path.isdir(dst) else os.remove)(dst)
-        (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, dst)
-        copied.append(name)
-
-    # The keyring service name differs, so the stored password must be re-keyed.
-    email = cfg.get("apple_id")
-    if email:
-        old_pw = keyring.get_password("obsidian-icloud-sync", email)
-        if old_pw:
-            save_password(email, old_pw)
-            copied.append("keyring password")
-
-    click.echo(f"Imported from iObsi: {', '.join(copied)}")
-    if skipped:
-        click.echo("")
-        click.echo(f"NOT imported, already present: {', '.join(skipped)}", err=True)
-        if "sync_state.db" in skipped:
-            click.echo(
-                "The existing sync database was kept. If it is empty (merely "
-                "starting the app creates one), the first sync will treat every "
-                "file as new and raise a conflict for each. Re-run with --force "
-                "to replace it.", err=True)
+    click.echo(f"Imported from iObsi: {', '.join(result['copied'])}")
     click.echo(f"  config -> {config_dir()}")
     click.echo(f"  state  -> {data_dir()}")
+
+    if result["skipped"]:
+        click.echo("")
+        click.echo(f"NOT imported, already present: {', '.join(result['skipped'])}",
+                   err=True)
+        if "sync_state.db" in result["skipped"]:
+            click.echo(
+                "The existing sync database was kept. If it is empty (merely "
+                "starting the app creates one), the first sync cannot tell which "
+                "copy of each file to keep and will have to ask. Re-run with "
+                "--force to replace it.", err=True)
+
     click.echo("\niObsi's own files were left untouched.")
     click.echo("Do not run both daemons against the same vault at the same time.")
 

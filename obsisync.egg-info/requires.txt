@@ -1,8 +1,9 @@
 requests>=2.31
+urllib3>=2.0
 srp>=1.0.20
+cryptography>=42.0
+pydantic>=2.0
 certifi
-tzlocal
-tinyhtml
 watchdog>=6.0
 keyring>=25.0
 click>=8.1

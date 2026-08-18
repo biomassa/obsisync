@@ -48,6 +48,7 @@ obsisync.egg-info/top_level.txt
 tests/test_auth_flow.py
 tests/test_bridge.py
 tests/test_engine.py
+tests/test_first_run.py
 tests/test_gui.py
 tests/test_packaging.py
 tests/test_portability.py

@@ -9,10 +9,11 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 License-File: icloudlite/LICENSE.pyicloud
 Requires-Dist: requests>=2.31
+Requires-Dist: urllib3>=2.0
 Requires-Dist: srp>=1.0.20
+Requires-Dist: cryptography>=42.0
+Requires-Dist: pydantic>=2.0
 Requires-Dist: certifi
-Requires-Dist: tzlocal
-Requires-Dist: tinyhtml
 Requires-Dist: watchdog>=6.0
 Requires-Dist: keyring>=25.0
 Requires-Dist: click>=8.1
@@ -131,6 +132,22 @@ python spike/demo.py              # UI preview with sample data, no iCloud
 python -m gui.app                 # run the GUI
 python sync.py --help             # headless CLI
 ```
+
+## First run against an existing vault
+
+Pointing obsisync at a folder that already holds your vault, when iCloud holds it too, is the
+dangerous moment: nothing is tracked yet, so every file looks changed on both sides. Resolving that
+by timestamp would overwrite whichever side happens to have older mtimes — and files freshly copied
+onto a machine carry *new* mtimes, so the local copy would win even when iCloud held the newer note.
+
+obsisync refuses to guess. The setup wizard asks, and if you get there another way the daemon pauses
+and asks on the dashboard:
+
+- **They already match — just start tracking.** Transfers nothing. Files present on both sides with
+  the same size are recorded as in sync; anything that differs is listed as a conflict to resolve
+  afterwards. This is the only option that cannot lose data.
+- **Trust iCloud.** Differing files are downloaded over the local copy.
+- **Trust this computer.** Differing files are uploaded over the iCloud copy.
 
 ## Memory footprint
 

@@ -52,6 +52,30 @@ check("copyright notice retained",
 check("provenance documented in the package docstring",
       "pyicloud" in (icloudlite.__doc__ or "").lower())
 
+print("\n== every import is declared as a dependency ==")
+# Dropping pyicloud meant restating its runtime deps by hand, and three were
+# missed — which only surfaced in CI, on a machine without the old package.
+import tomllib
+_declared = {d.split(">")[0].split("=")[0].split("[")[0].strip().lower().replace("_", "-")
+             for d in tomllib.load(open(os.path.join(ROOT, "pyproject.toml"), "rb"))
+             ["project"]["dependencies"]}
+_stdlib = set(sys.stdlib_module_names)
+_imported = set()
+for dp, _, files in os.walk(os.path.join(ROOT, "icloudlite")):
+    for f in files:
+        if not f.endswith(".py"):
+            continue
+        for n in ast.walk(ast.parse(open(os.path.join(dp, f)).read())):
+            if isinstance(n, ast.Import):
+                _imported |= {a.name.split(".")[0] for a in n.names}
+            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                _imported.add(n.module.split(".")[0])
+_third = {m for m in _imported if m not in _stdlib and m != "icloudlite"}
+_undeclared = sorted(m for m in _third
+                     if m.lower().replace("_", "-") not in _declared)
+check("every third-party import of icloudlite is declared",
+      not _undeclared, f"undeclared: {_undeclared}")
+
 print("\n== the surface the engine uses still exists ==")
 from icloudlite import PyiCloudService
 for attr in ("authenticate", "requires_2fa", "validate_2fa_code",

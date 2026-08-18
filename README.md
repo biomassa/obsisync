@@ -105,6 +105,18 @@ python -m gui.app                 # run the GUI
 python sync.py --help             # headless CLI
 ```
 
+## Coming from iObsi
+
+If [iObsi](https://github.com/biomassa/iObsi) is already installed, the setup wizard offers to
+import it — account, vault, settings and the sync database — so there is nothing to sign in to and
+nothing to reconcile. Carrying the database across is the point: without it the first sync starts
+from an empty database and has to ask about every file.
+
+Everything is copied, never moved, so iObsi keeps working. Do not run both against the same vault
+at the same time.
+
+The CLI equivalent is `obsisync --headless import-from-iobsi`.
+
 ## First run against an existing vault
 
 Pointing obsisync at a folder that already holds your vault, when iCloud holds it too, is the
