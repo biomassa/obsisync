@@ -1,7 +1,7 @@
 import os
 import keyring
-from pyicloud import PyiCloudService
-from pyicloud.exceptions import PyiCloudFailedLoginException
+from icloudlite import PyiCloudService
+from icloudlite.exceptions import PyiCloudFailedLoginException
 from config import path_for
 from paths import data_dir
 

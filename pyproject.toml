@@ -6,7 +6,13 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
-    "pyicloud>=2.6",
+    # iCloud Drive access is vendored in icloudlite/ (a trimmed pyicloud fork),
+    # so these are pyicloud's runtime needs minus fido2/pydantic-cloudkit/protobuf.
+    "requests>=2.31",
+    "srp>=1.0.20",
+    "certifi",
+    "tzlocal",
+    "tinyhtml",
     "watchdog>=6.0",
     "keyring>=25.0",
     "click>=8.1",

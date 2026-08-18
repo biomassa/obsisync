@@ -21,3 +21,5 @@ CLAUDE.md
 build_spike*.log
 spike/
 docs/screenshots/
+build-standalone/
+build_*.log

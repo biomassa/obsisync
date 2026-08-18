@@ -50,6 +50,7 @@ one. The GUI lives in `gui/` and depends on the engine, never the reverse.
 with no desktop.
 
 ```
+icloudlite/      Drive-only fork of pyicloud (MIT) — see its __init__ for what was cut
 sync_engine.py   core loop: diff, upload/download, conflicts, deletion guards
 scanner.py       local and remote inventory
 conflict.py      resolution strategies
@@ -80,6 +81,7 @@ python tests/test_bridge.py       # engine -> Qt signal bridge (5 checks)
 python tests/test_gui.py          # main window wiring (22 checks)
 python tests/test_auth_flow.py    # wizard, 2FA bridging, session (24 checks)
 python tests/test_tray.py         # tray state, notifications, autostart (18 checks)
+python tests/test_vendor.py       # vendored iCloud client surface (36 checks)
 
 python spike/demo.py              # UI preview with sample data, no iCloud
 
@@ -87,9 +89,28 @@ python -m gui.app                 # run the GUI
 python sync.py --help             # headless CLI
 ```
 
+## Memory footprint
+
+This is a resident background app, so its footprint is treated as a feature. Measured on Linux
+with the GUI loaded:
+
+| | resident |
+|---|---|
+| from source, upstream pyicloud | 135 MB |
+| from source, vendored Drive-only client | 113 MB |
+| Nuitka-compiled | ~163 MB before vendoring |
+
+`icloudlite/` exists for this reason: upstream pyicloud eagerly imports fido2, CloudKit and every
+service — photos, calendar, contacts, reminders, notes — before Drive is touched, and those imports
+cannot be excluded at build time. Compiling costs about 28 MB over running from source; that is
+inherent to Nuitka's compiled modules, not to `--onefile` (a plain `--standalone` build measures
+identically).
+
 ## Credits
 
 The sync engine originates in [iObsi](https://github.com/biomassa/iObsi) by the same author.
+`icloudlite/` is a trimmed fork of [pyicloud](https://github.com/picklepete/pyicloud) 2.6.5,
+MIT licensed — the original notice is kept in `icloudlite/LICENSE.pyicloud`.
 
 **Back up your vault.** This software moves and deletes files in it.
 
