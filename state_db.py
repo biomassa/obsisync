@@ -26,20 +26,39 @@ def _quarantine_corrupt_db(exc):
     traceback and no way out.
     """
     import time as _time
+
+    # Close first: Windows refuses to rename or delete a file that still has an
+    # open handle, so leaving the connection open makes the move silently fail
+    # and the next open finds the same corrupt file again.
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    _local.conn = None
+
     stamp = _time.strftime("%Y%m%d-%H%M%S")
     broken = f"{DB_PATH}.corrupt-{stamp}"
+    moved = False
     for suffix in ("", "-wal", "-shm"):
         src = DB_PATH + suffix
-        if os.path.exists(src):
+        if not os.path.exists(src):
+            continue
+        try:
+            os.replace(src, broken + suffix)
+            moved = True
+        except OSError:
             try:
-                os.replace(src, broken + suffix)
+                os.remove(src)
             except OSError:
-                try:
-                    os.remove(src)
-                except OSError:
-                    pass
-    _local.conn = None
-    return broken
+                pass
+    if os.path.exists(DB_PATH):
+        # Neither moving nor deleting worked; carrying on would just re-open the
+        # same unreadable file on the next call.
+        raise sqlite3.DatabaseError(
+            f"sync database at {DB_PATH} is unreadable and could not be replaced: {exc}")
+    return broken if moved else DB_PATH
 
 
 def init():
