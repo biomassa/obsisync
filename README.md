@@ -26,7 +26,7 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 | Cross-platform paths, config locations, shutdown | done — engine is Windows-capable |
 | Windows end-to-end verification | not yet run on real hardware |
 | Native GUI (dashboard, logs, conflicts, settings) | working from source |
-| Setup wizard and 2FA re-auth | not started |
+| Setup wizard and 2FA re-auth | working from source |
 | Tray, autostart, notifications | not started |
 | Installers (Windows / AppImage / deb / Arch) | not started |
 
@@ -35,8 +35,7 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 1. ~~**Portability** — canonical path handling, `platformdirs` config locations, clean shutdown,
    explicit keyring backends.~~ Done.
 2. ~~**GUI** — PySide6 main window: stats, logs, conflicts, settings.~~ Done.
-3. **Setup wizard and re-auth** — including the 2FA prompt, which the daemon currently cannot ask for
-   (it just dies when the iCloud session expires).
+3. ~~**Setup wizard and re-auth** — including the 2FA prompt.~~ Done.
 4. **Background behaviour** — tray icon, close-hides-to-tray, start on login, desktop notifications.
 5. **Packaging** — Nuitka-compiled binaries, built in GitHub Actions.
 
@@ -64,6 +63,8 @@ gui/
   pages.py       dashboard, logs, conflicts, settings
   main_window.py navigation, controller, close-to-tray
   app.py         entry point
+  session.py     iCloud connection, cross-thread 2FA prompt, daemon lifecycle
+  wizard.py      first-run setup and re-auth dialogs
 ```
 
 ## Development
@@ -75,6 +76,7 @@ python tests/test_engine.py       # engine regression suite (62 checks)
 python tests/test_portability.py  # cross-platform path handling (24 checks)
 python tests/test_bridge.py       # engine -> Qt signal bridge (5 checks)
 python tests/test_gui.py          # main window wiring (22 checks)
+python tests/test_auth_flow.py    # wizard, 2FA bridging, session (24 checks)
 
 python -m gui.app                 # run the GUI
 python sync.py --help             # headless CLI

@@ -48,7 +48,18 @@ def clear_password(email):
         pass
 
 
-def authenticate(email, password=None, interactive=False):
+class TwoFactorRequired(RuntimeError):
+    """Raised when a 2FA code is needed but no way to ask for one was supplied."""
+
+
+def authenticate(email, password=None, interactive=False, twofa_callback=None):
+    """Authenticate against iCloud.
+
+    iCloud trust cookies expire every few weeks, so 2FA is not only a first-run
+    concern — a long-running daemon will hit it again. ``twofa_callback`` is how
+    a GUI supplies a code without this function blocking on stdin: it is called
+    with the api object and must return a code string, or None to cancel.
+    """
     if not password:
         password = get_password(email)
 
@@ -56,20 +67,25 @@ def authenticate(email, password=None, interactive=False):
     api = PyiCloudService(email, password, cookie_directory=COOKIE_DIR)
 
     if api.requires_2fa:
-        if not interactive:
-            raise RuntimeError(
-                "2FA required but running in non-interactive mode. "
-                "Run 'sync.py setup' first."
+        if twofa_callback is not None:
+            code = twofa_callback(api)
+        elif interactive:
+            print("Two-factor authentication required.")
+            code = input("Enter the code sent to your devices: ")
+        else:
+            raise TwoFactorRequired(
+                "iCloud requires a two-factor code and there is no way to ask for "
+                "one here. Open the app, or run 'sync.py setup'."
             )
-        print("Two-factor authentication required.")
-        code = input("Enter the code sent to your devices: ")
-        result = api.validate_2fa_code(code)
-        if not result:
+
+        if not code:
+            raise TwoFactorRequired("Two-factor authentication was cancelled")
+
+        if not api.validate_2fa_code(code):
             raise RuntimeError("Invalid 2FA code")
-        if not api.is_trusted_session:
-            result = api.trust_session()
-            if not result:
-                print("Warning: failed to trust session")
+        if not api.is_trusted_session and not api.trust_session():
+            # Not fatal: the session works, it just will not be remembered.
+            print("Warning: failed to trust session")
 
     return api
 
