@@ -9,11 +9,13 @@ it does not embed one. macOS is out of scope, because iCloud Drive sync is nativ
 ## LLM Usage Disclaimer
 
 A large language model (LLM) helped to develop this software. The author directed the work,
-reviewed the changes and tested the result, but an LLM wrote most of the code, the tests and this
-document.
+reviewed the changes and tested the result.
 
-Read this as a caution, not as an apology. This program moves and deletes files in your notes.
 Back up your vault before you use it.
+
+ALWAYS BACK UP YOUR VAULT!
+ALWAYS BACK UP YOUR VAULT!
+ALWAYS BACK UP YOUR VAULT!
 
 ## Status
 

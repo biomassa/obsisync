@@ -255,15 +255,30 @@ jobs:
           $v = "${env:GITHUB_REF_NAME}" -replace '^v',''
           if ($v -notmatch '^\d') { $v = '0.1.0' }
           Write-Host "installer version: $v"
-          makensis /DVERSION=$v packaging\windows\installer.nsi
 
-      - uses: actions/upload-artifact@v4
+          # NSIS ships with the runner image but is not on PATH.
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $nsis)) {
+              $nsis = "C:\Program Files\NSIS\makensis.exe"
+          }
+          if (-not (Test-Path $nsis)) {
+              Write-Host "NSIS not present; installing it"
+              choco install nsis -y --no-progress
+              $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          & $nsis /DVERSION=$v packaging\windows\installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Runs even if the installer step failed: the bare exe is still useful,
+      # and losing it means re-running a 15-minute compile to get it back.
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: windows
           path: |
             dist/obsisync.exe
             dist/obsisync-setup-*.exe
-          if-no-files-found: error
+          if-no-files-found: warn
 
   release:
     name: release
