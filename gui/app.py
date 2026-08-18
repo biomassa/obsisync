@@ -2,7 +2,7 @@
 import sys
 import threading
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 import config
@@ -88,6 +88,10 @@ class Application:
             if dialog.exec() != SetupDialog.Accepted:
                 return 0                      # user cancelled setup; nothing to run
             self.cfg = dialog.result_config()
+            # The window was built before the wizard ran, so its settings page
+            # is still showing the pre-setup config.
+            self.window.settings.load()
+            self.window.conflicts.refresh()
             # Setup already authenticated, so reuse that session rather than
             # asking Apple (and possibly the user) all over again.
             if dialog.api is not None:
@@ -99,6 +103,11 @@ class Application:
 
         if self.session.api is None:
             sync_engine.log("INFO", "Connecting to iCloud…")
+            self.window.statusBar().showMessage("Connecting to iCloud…")
+            self._connect_watchdog = QTimer(self.window)
+            self._connect_watchdog.setSingleShot(True)
+            self._connect_watchdog.timeout.connect(self._connect_slow)
+            self._connect_watchdog.start(45000)
             self.session.connect_async(self.cfg)
 
         return self.app.exec()
@@ -113,7 +122,30 @@ class Application:
         self.session.vault_node = vault_node
         self._on_connected(api, vault_node)
 
+    def _connect_slow(self):
+        """Say something if the connection has produced nothing at all.
+
+        Authentication is a chain of network calls with no progress reporting;
+        without this the UI simply sits on "Connecting to iCloud…" forever and
+        looks hung.
+        """
+        if self.session.api is not None:
+            return
+        sync_engine.log(
+            "ERROR",
+            "Still connecting to iCloud after 45s. If iCloud is waiting for a "
+            "two-factor code it should have prompted; otherwise the request may "
+            "be stuck and restarting the app is the quickest way out.")
+        self.window.statusBar().showMessage(
+            "Still connecting — see the Logs page", 15000)
+
+    def _stop_connect_watchdog(self):
+        timer = getattr(self, "_connect_watchdog", None)
+        if timer is not None:
+            timer.stop()
+
     def _on_connected(self, api, vault_node):
+        self._stop_connect_watchdog()
         self.window.controller.attach_session(api, vault_node, self.cfg)
         self._consume_first_run_mode(api, vault_node)
         self.session.start_daemon(self.cfg)
@@ -151,6 +183,7 @@ class Application:
         self.cfg.pop("first_run_mode", None)
 
     def _on_failed(self, reason):
+        self._stop_connect_watchdog()
         sync_engine.log("ERROR", f"Not connected: {reason}")
         if self.tray:
             self.tray.set_state("offline", f"obsisync — not connected")

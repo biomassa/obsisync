@@ -57,6 +57,7 @@ jobs:
           python tests/test_packaging.py
           python tests/test_first_run.py
           python tests/test_migrate.py
+          python tests/test_regressions.py
 
   build-linux:
     name: linux binary

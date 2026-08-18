@@ -74,12 +74,14 @@ class SessionManager(QObject):
 
     def _connect(self, cfg):
         try:
+            sync_engine.log("DEBUG", f"Authenticating as {cfg.get('apple_id','?')}…")
             api = authenticate(
                 cfg["apple_id"],
                 get_password(cfg["apple_id"]),
                 interactive=False,
                 twofa_callback=self.prompt.request,
             )
+            sync_engine.log("DEBUG", "Authenticated; locating the vault…")
             vault_node = find_vault_root(api, cfg["vault_name"])
             if vault_node is None:
                 self.failed.emit(

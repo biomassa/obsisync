@@ -15,7 +15,30 @@ import keyring
 from paths import LEGACY_CONFIG_DIR, config_dir, data_dir, legacy_config_exists
 
 LEGACY_KEYRING_SERVICE = "obsidian-icloud-sync"
-STATE_FILES = ("session", "sync_state.db")
+# sync_state.db is handled separately: see _copy_database.
+STATE_FILES = ("session",)
+
+
+def _copy_database(src, dst):
+    """Copy a SQLite database that may be in WAL mode.
+
+    iObsi runs with journal_mode=WAL, so recent writes live in a sibling
+    ``-wal`` file rather than the main database. Copying only the main file
+    yields an image that SQLite rejects outright with "database disk image is
+    malformed" — the main file can be months old while the WAL holds everything
+    since. The backup API reads through the WAL and writes a single consistent
+    file.
+    """
+    import sqlite3
+    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    try:
+        target = sqlite3.connect(dst)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    finally:
+        source.close()
 
 
 def available():
@@ -89,6 +112,18 @@ def import_from_iobsi(force=False):
             (shutil.rmtree if os.path.isdir(dst) else os.remove)(dst)
         (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, dst)
         copied.append(name)
+
+    src_db = os.path.join(LEGACY_CONFIG_DIR, "sync_state.db")
+    dst_db = os.path.join(data_dir(), "sync_state.db")
+    if os.path.isfile(src_db):
+        if os.path.exists(dst_db) and not force:
+            skipped.append("sync_state.db")
+        else:
+            for stale in (dst_db, dst_db + "-wal", dst_db + "-shm"):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            _copy_database(src_db, dst_db)
+            copied.append("sync_state.db")
 
     # The keyring service name differs, so the password must be re-keyed.
     email = cfg.get("apple_id")

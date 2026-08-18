@@ -18,8 +18,44 @@ def _get_conn():
     return _local.conn
 
 
+def _quarantine_corrupt_db(exc):
+    """Move an unreadable database aside so the app can start.
+
+    Losing tracking is recoverable — the next sync re-adopts the vault — but a
+    database that cannot be opened otherwise makes the app unstartable, with a
+    traceback and no way out.
+    """
+    import time as _time
+    stamp = _time.strftime("%Y%m%d-%H%M%S")
+    broken = f"{DB_PATH}.corrupt-{stamp}"
+    for suffix in ("", "-wal", "-shm"):
+        src = DB_PATH + suffix
+        if os.path.exists(src):
+            try:
+                os.replace(src, broken + suffix)
+            except OSError:
+                try:
+                    os.remove(src)
+                except OSError:
+                    pass
+    _local.conn = None
+    return broken
+
+
 def init():
-    conn = _get_conn()
+    try:
+        conn = _get_conn()
+        conn.execute("select 1 from sqlite_master limit 1")
+    except sqlite3.DatabaseError as exc:
+        broken = _quarantine_corrupt_db(exc)
+        conn = _get_conn()
+        try:
+            from sync_engine import log as _log
+            _log("ERROR",
+                 f"Sync database was unreadable ({exc}); moved to {broken} and "
+                 "started a fresh one. The next sync will re-check the vault.")
+        except Exception:
+            pass
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS file_states (
             path           TEXT PRIMARY KEY,

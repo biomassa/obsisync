@@ -460,7 +460,21 @@ class SettingsPage(QWidget):
 
     def _save(self):
         cfg = config.load()
-        cfg["local_path"] = self.local_path.text().strip()
+        new_path = self.local_path.text().strip()
+        if not new_path:
+            QMessageBox.warning(self, "No vault folder", "Choose a vault folder.")
+            return
+        if not os.path.isdir(new_path):
+            # Saving a path that does not exist would make the next sync treat
+            # the vault as missing and download the whole thing afresh.
+            if QMessageBox.question(
+                    self, "Folder does not exist",
+                    f"{new_path} does not exist.\n\nIf you save this, the next sync "
+                    "will treat the vault as missing and download everything from "
+                    "iCloud into it. Save anyway?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+        cfg["local_path"] = new_path
         cfg["poll_interval"] = self.poll_interval.value()
         cfg["conflict_strategy"] = self.strategy.currentText()
         cfg["log_level"] = self.log_level.currentText()
