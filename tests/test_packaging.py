@@ -29,20 +29,40 @@ check("GUI is imported lazily, so --headless does not load Qt",
       entry.index("--headless") < entry.index("from gui.app import"))
 
 print("\n== build configuration ==")
-_raw = open(os.path.join(ROOT, "build.py")).read()
-# Strip the module docstring: it *explains* which flags are deliberately absent,
-# so a plain substring search would find those flags in prose and mis-report.
-_doc = ast.get_docstring(ast.parse(_raw)) or ""
-build_src = _raw.replace(_doc, "")
+# Read the FLAGS, not the file text. Comments and docstrings are absent from the
+# AST, so prose explaining a deliberately-omitted flag cannot be mistaken for the
+# flag being present — a mistake plain substring checks kept making.
+_tree = ast.parse(open(os.path.join(ROOT, "build.py")).read())
+FLAGS = {n.value for n in ast.walk(_tree)
+         if isinstance(n, ast.Constant) and isinstance(n.value, str)
+         and n.value.startswith("--")}
+# f-string flags (Qt exclusions) appear as JoinedStr; collect their literal parts.
+for n in ast.walk(_tree):
+    if isinstance(n, ast.JoinedStr):
+        lit = "".join(v.value for v in n.values if isinstance(v, ast.Constant))
+        if lit.startswith("--"):
+            FLAGS.add(lit)
+QT_EXCLUDED = set()
+for n in ast.walk(_tree):
+    if isinstance(n, ast.Assign) and any(
+            getattr(t, "id", "") == "_UNUSED_QT" for t in n.targets):
+        QT_EXCLUDED = {e.value for e in n.value.elts}
+
 check("keyring backends force-included (resolved dynamically at runtime)",
-      "keyring.backends" in build_src)
-check("vendored client force-included", "icloudlite" in build_src)
+      "--include-package=keyring.backends" in FLAGS, str(sorted(FLAGS))[:150])
+check("vendored client force-included", "--include-package=icloudlite" in FLAGS)
 check("QtWebEngine excluded (the single largest Qt component)",
-      "QtWebEngineCore" in build_src)
+      "PySide6.QtWebEngineCore" in QT_EXCLUDED, str(sorted(QT_EXCLUDED))[:100])
+check("QtQuick/QML excluded", "PySide6.QtQml" in QT_EXCLUDED)
 check("unittest NOT excluded — the icloud chain hard-imports unittest.mock",
-      "nofollow-import-to=unittest" not in build_src)
+      "--nofollow-import-to=unittest" not in FLAGS)
+# -OO strips docstrings and Click builds --help from them, so the compiled CLI
+# would document nothing.
+check("-O used, not -OO", "--python-flag=-O" in FLAGS)
+check("-OO not used anywhere", "--python-flag=-OO" not in FLAGS)
 check("windows console disabled for a GUI app",
-      "windows-console-mode=disable" in build_src)
+      "--windows-console-mode=disable" in FLAGS)
+check("onefile requested", "--onefile" in FLAGS)
 
 print("\n== icons ==")
 for name, minimum in (("icon.svg", 200), ("icon.png", 1000), ("icon.ico", 2000)):

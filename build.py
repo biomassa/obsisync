@@ -16,6 +16,8 @@ failed without it:
 * No ``--nofollow-import-to=unittest`` — it looks like free bloat removal, but
   something in the iCloud chain hard-imports ``unittest.mock`` at runtime and the
   binary aborts on stderr while still exiting 0.
+* ``-O`` rather than ``-OO`` — the extra O strips docstrings, and Click derives
+  its ``--help`` text from them, so the compiled CLI would document nothing.
 """
 import argparse
 import os
@@ -53,7 +55,9 @@ def build(onefile=True, output_dir="dist", jobs=None):
         "--include-package=keyring.backends",
         "--include-package=icloudlite",
         "--nofollow-import-to=tkinter",
-        "--python-flag=-OO",
+        # -O not -OO: -OO strips docstrings, and Click builds its --help
+        # text from them, leaving the compiled CLI with no help at all.
+        "--python-flag=-O",
         "--assume-yes-for-downloads",
         f"--output-dir={output_dir}",
         "--output-filename=obsisync",

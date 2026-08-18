@@ -44,6 +44,7 @@ jobs:
           python tests/test_gui.py
           python tests/test_auth_flow.py
           python tests/test_tray.py
+          python tests/test_packaging.py
 
   build-linux:
     name: linux binary
@@ -92,6 +93,10 @@ jobs:
         run: |
           ./dist/obsisync --version
           ./dist/obsisync --headless --help
+          # Click derives --help from docstrings; -OO would silently strip them
+          # and leave the compiled CLI documenting nothing.
+          ./dist/obsisync --headless --help | grep -q "Remove stored iCloud credentials" \
+            || { echo "compiled CLI lost its help text"; exit 1; }
 
       - name: Package AppImage
         run: |
@@ -211,6 +216,8 @@ jobs:
         run: |
           .\dist\obsisync.exe --version
           .\dist\obsisync.exe --headless --help
+          .\dist\obsisync.exe --headless --help | Select-String -Quiet "Remove stored iCloud credentials" `
+            || (Write-Error "compiled CLI lost its help text"; exit 1)
 
       - name: Build installer
         run: makensis /DVERSION=${{ github.ref_name }} packaging\windows\installer.nsi

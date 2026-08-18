@@ -3,7 +3,8 @@ name = "obsisync"
 version = "0.1.0"
 description = "Native desktop app to sync an Obsidian vault with iCloud Drive on Linux and Windows"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE", "icloudlite/LICENSE.pyicloud"]
 requires-python = ">=3.11"
 dependencies = [
     # iCloud Drive access is vendored in icloudlite/ (a trimmed pyicloud fork),
@@ -29,3 +30,17 @@ obsisync-cli = "sync:cli"
 
 [project.urls]
 Homepage = "https://github.com/biomassa/obsisync"
+
+# This is an application, not a library, so its layout is flat rather than src/.
+# setuptools refuses to guess in that case and must be told explicitly, or
+# `pip install -e .` fails with "Multiple top-level packages discovered".
+[tool.setuptools]
+packages = ["gui", "icloudlite", "icloudlite.services", "icloudlite.common"]
+py-modules = [
+    "obsisync", "sync", "sync_engine", "scanner", "conflict", "state_db",
+    "auth", "filters", "watcher", "config", "paths", "build",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"

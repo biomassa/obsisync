@@ -1,0 +1,14 @@
+auth
+build
+config
+conflict
+filters
+gui
+icloudlite
+obsisync
+paths
+scanner
+state_db
+sync
+sync_engine
+watcher

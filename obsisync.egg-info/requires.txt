@@ -1,0 +1,17 @@
+requests>=2.31
+srp>=1.0.20
+certifi
+tzlocal
+tinyhtml
+watchdog>=6.0
+keyring>=25.0
+click>=8.1
+platformdirs>=4.0
+PySide6>=6.10
+
+[build]
+nuitka>=4.1
+
+[dev]
+pytest>=8.0
+pytest-qt>=4.4
