@@ -35,8 +35,8 @@ class TwoFactorPrompt(QObject):
         """Called from a worker thread. Returns the code, or None if cancelled."""
         self._code = None
         self._event.clear()
-        notice = getattr(api, "two_factor_delivery_notice", None) if api else None
-        self.codeRequested.emit(notice)
+        from auth import delivery_notice
+        self.codeRequested.emit(delivery_notice(api) if api else None)
         if not self._event.wait(timeout=_CODE_TIMEOUT_SECONDS):
             return None
         return self._code

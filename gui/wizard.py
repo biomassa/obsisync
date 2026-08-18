@@ -21,9 +21,29 @@ import sync_engine
 from auth import (
     TwoFactorRequired, authenticate, discover_vaults, get_password, save_password,
 )
+from gui.session import TwoFactorPrompt
 from paths import default_vault_path
 
 PAGE_CREDENTIALS, PAGE_TWOFA, PAGE_VAULT, PAGE_FOLDER, PAGE_FIRST_SYNC = range(5)
+
+
+def _readable(exc):
+    """A message fit for a dialog.
+
+    Apple answers a failed verification with its whole auth payload, phone
+    numbers included. Showing that raw fills the window with JSON and leaks
+    details that do not belong on screen.
+    """
+    text = str(exc).strip()
+    if len(text) > 200 or text.lstrip().startswith("{"):
+        lowered = text.lower()
+        if "toomanycodessent" in lowered.replace(" ", ""):
+            return ("Apple is rate-limiting verification codes for this account. "
+                    "Wait a few minutes before trying again.")
+        if "securitycodelocked" in lowered.replace(" ", ""):
+            return "Apple has locked verification codes for this account. Try later."
+        return "Apple rejected the code. Check it and try again."
+    return text
 
 
 class _Worker(QObject):
@@ -34,34 +54,37 @@ class _Worker(QObject):
     vaultsFound = Signal(list)
     failed = Signal(str)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # One prompt, one session. The code Apple sends is bound to the session
+        # that requested it, so signing in again to submit it can never work.
+        self.prompt = TwoFactorPrompt(self)
+        self.prompt.codeRequested.connect(self.twoFactorNeeded, Qt.QueuedConnection)
+
     def sign_in(self, email, password):
         threading.Thread(
             target=self._sign_in, args=(email, password), daemon=True,
             name="setup-signin").start()
 
     def _sign_in(self, email, password):
-        try:
-            api = authenticate(email, password, interactive=False)
-            self.authenticated.emit(api)
-        except TwoFactorRequired as exc:
-            # Credentials were accepted and only the code is missing. The
-            # message carries where Apple sent it, or why it could not.
-            self.twoFactorNeeded.emit(str(exc) if "sent" in str(exc).lower() else None)
-        except Exception as exc:
-            self.failed.emit(str(exc))
+        """Authenticate once, and block inside it while the user reads the code.
 
-    def submit_code(self, email, password, code):
-        threading.Thread(
-            target=self._submit_code, args=(email, password, code), daemon=True,
-            name="setup-2fa").start()
-
-    def _submit_code(self, email, password, code):
+        This must be a single authenticate() call. The earlier design signed in,
+        raised for the missing code, then signed in *again* to submit it — which
+        built a fresh session, made Apple send another code, and then checked the
+        old code against the new session. It could not succeed, and it triggered
+        a code on every attempt until Apple returned "tooManyCodesSent".
+        """
         try:
-            api = authenticate(
-                email, password, interactive=False, twofa_callback=lambda _api: code)
+            api = authenticate(email, password, interactive=False,
+                               twofa_callback=self.prompt.request)
             self.authenticated.emit(api)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            self.failed.emit(_readable(exc))
+
+    def provide_code(self, code):
+        """Hand the code to the sign-in that is waiting for it."""
+        self.prompt.provide(code)
 
     def find_vaults(self, api):
         threading.Thread(
@@ -302,7 +325,7 @@ class SetupDialog(QDialog):
                 self.message.setText("Enter the code Apple sent you.")
                 return
             self._set_busy(True, "Verifying code…")
-            self.worker.submit_code(self._email, self._password, code)
+            self.worker.provide_code(code)
 
         elif page == PAGE_VAULT:
             vault = (self.manual_vault.text().strip()
@@ -367,7 +390,7 @@ class SetupDialog(QDialog):
 
     def _on_failed(self, reason):
         self._set_busy(False)
-        self.message.setText(reason)
+        self.message.setText(_readable(reason))
 
     def _finish(self, folder):
         cfg = config.load()

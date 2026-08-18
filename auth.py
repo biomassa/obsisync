@@ -78,15 +78,41 @@ def _request_code_delivery(api):
             f"Apple refused to send a code to your trusted devices: {exc}"
         ) from exc
 
-    notice = getattr(api, "two_factor_delivery_notice", None)
-    if notice:
-        return notice
+    return delivery_notice(api)
+
+
+def delivery_notice(api):
+    """Say which code to type.
+
+    Apple often shows a prompt on a trusted device *and* sends an SMS. Only one
+    of them is the code the session will accept, and which one depends on the
+    delivery route Apple chose, so the prompt has to be explicit or the user
+    picks the wrong one and every attempt fails.
+    """
     method = getattr(api, "two_factor_delivery_method", "unknown")
-    if method == "trusted_device":
-        return "Apple sent a code to your trusted devices."
+    detail = getattr(api, "two_factor_delivery_notice", None)
+
     if method == "sms":
-        return "Apple sent a code by SMS."
+        where = _sms_destination(api)
+        return (f"Apple sent a code by SMS{where}.\n"
+                "Type the code from the text message. If a prompt also appeared "
+                "on one of your devices, ignore that one.")
+    if method == "trusted_device":
+        return ("Apple sent a code to your trusted devices.\n"
+                "Type the code shown on the device prompt.")
+    if detail:
+        return detail
     return None
+
+
+def _sms_destination(api):
+    """' to +972 ...78', when Apple says where it sent the message."""
+    try:
+        number = (api._auth_data or {}).get("phoneNumber") or {}
+        obfuscated = number.get("obfuscatedNumber") or number.get("numberWithDialCode")
+        return f" to {obfuscated}" if obfuscated else ""
+    except Exception:
+        return ""
 
 
 def authenticate(email, password=None, interactive=False, twofa_callback=None):

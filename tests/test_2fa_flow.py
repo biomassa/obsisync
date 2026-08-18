@@ -90,13 +90,50 @@ auth.authenticate("a@b.c", "pw",
 check("the delivery method is available to the prompt",
       seen.get("method") == "trusted_device", str(seen))
 
+# For a known route obsisync writes its own message rather than relaying
+# Apple's, because it has to say which of the two prompts to use.
 api4 = with_api(FakeApi(delivery="sms", notice="A code was sent to +1 ... 1234"))
 notice = auth._request_code_delivery(api4)
-check("an SMS notice is passed through", "1234" in (notice or ""), str(notice))
+check("an SMS route produces SMS guidance", "text message" in (notice or ""), str(notice))
+
+class UnknownRouteApi(FakeApi):
+    pass
+api4b = with_api(UnknownRouteApi(delivery="unknown", notice="Apple said something"))
+check("an unrecognised route falls back to Apple's own wording",
+      auth._request_code_delivery(api4b) == "Apple said something",
+      str(auth._request_code_delivery(api4b)))
 api5 = with_api(FakeApi(delivery="trusted_device", notice=None))
 check("a trusted-device route is described even without a notice",
       "trusted device" in (auth._request_code_delivery(api5) or "").lower(),
       str(auth._request_code_delivery(api5)))
+
+print("\n== the prompt says which code to type ==")
+# Apple often shows a device prompt AND sends an SMS. Only one is accepted, so
+# an ambiguous prompt means the user picks wrong and every attempt fails.
+class SmsApi:
+    two_factor_delivery_method = "sms"
+    two_factor_delivery_notice = None
+    _auth_data = {"phoneNumber": {"obfuscatedNumber": "•••-•••-••78"}}
+notice = auth.delivery_notice(SmsApi())
+check("an SMS route names the number", "••78" in notice, notice)
+check("it says to use the text message", "text message" in notice, notice)
+check("it says to ignore a device prompt", "ignore" in notice.lower(), notice)
+
+class DeviceApi:
+    two_factor_delivery_method = "trusted_device"
+    two_factor_delivery_notice = None
+    _auth_data = {}
+notice = auth.delivery_notice(DeviceApi())
+check("a device route says to use the device prompt",
+      "device prompt" in notice, notice)
+check("it does not mention SMS", "sms" not in notice.lower(), notice)
+
+class NoDataApi:
+    two_factor_delivery_method = "sms"
+    two_factor_delivery_notice = None
+    _auth_data = None
+check("a missing payload does not crash the notice",
+      "SMS" in (auth.delivery_notice(NoDataApi()) or ""))
 
 print("\n== failures explain themselves ==")
 api6 = with_api(FakeApi(request_result=False))
@@ -127,6 +164,79 @@ try:
 except auth.TwoFactorRequired as exc:
     msg = str(exc)
 check("a refused device prompt is explained", "trusted devices" in msg, msg)
+
+print("\n== the wizard signs in once and keeps that session ==")
+# The reported failure: submitting the code started a second sign-in, which made
+# Apple send another code and checked the old one against the new session. It
+# could never succeed, and it ran until Apple answered "tooManyCodesSent".
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QTimer
+import gui.wizard as wiz
+
+app = QApplication.instance() or QApplication([])
+
+sessions = []
+class SessionApi(FakeApi):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        sessions.append(self)
+        self.code_sends = 0
+    def request_2fa_code(self):
+        self.code_sends += 1
+        return super().request_2fa_code()
+
+wiz.authenticate = lambda email, password, interactive=False, twofa_callback=None: (
+    _drive(SessionApi(), twofa_callback))
+
+def _drive(api, cb):
+    """Mimic auth.authenticate: request a code, then block on the callback."""
+    api.request_2fa_code()
+    code = cb(api) if cb else None
+    if not api.validate_2fa_code(code or ""):
+        raise RuntimeError("Invalid 2FA code")
+    return api
+
+sessions.clear()
+d = wiz.SetupDialog()
+d.email.setText("a@b.c"); d.password.setText("pw")
+d._advance()                                   # start the sign-in
+
+# Wait for the worker to reach the 2FA prompt.
+for _ in range(200):
+    app.processEvents()
+    if d.stack.currentIndex() == wiz.PAGE_TWOFA:
+        break
+    QApplication.processEvents()
+    import time as _t; _t.sleep(0.01)
+check("the wizard reaches the code page", d.stack.currentIndex() == wiz.PAGE_TWOFA,
+      f"page {d.stack.currentIndex()}")
+check("exactly one session was created so far", len(sessions) == 1, str(len(sessions)))
+check("Apple was asked for exactly one code",
+      sessions and sessions[0].code_sends == 1,
+      str(sessions[0].code_sends if sessions else None))
+
+d.code.setText("123456")
+d._advance()                                   # submit the code
+for _ in range(200):
+    app.processEvents()
+    if sessions[0].validated_with:
+        break
+    import time as _t; _t.sleep(0.01)
+
+check("no second sign-in happened", len(sessions) == 1, f"{len(sessions)} sessions")
+check("no second code was sent", sessions[0].code_sends == 1, str(sessions[0].code_sends))
+check("the code was checked against the original session",
+      sessions[0].validated_with == "123456", str(sessions[0].validated_with))
+
+print("\n== apple's raw payload is not shown as an error ==")
+blob = ('{ "trustedPhoneNumbers": [{"obfuscatedNumber": "***78"}], '
+        '"securityCode": {"tooManyCodesSent": true}, "mode": "sms" }' + " x" * 120)
+msg = wiz._readable(RuntimeError(blob))
+check("a rate limit is explained in words", "rate-limiting" in msg, msg[:80])
+check("the payload is not repeated on screen", "obfuscatedNumber" not in msg)
+check("a short message is left alone", wiz._readable(RuntimeError("Invalid 2FA code"))
+      == "Invalid 2FA code")
 
 print("\n== the session is trusted afterwards ==")
 api7 = with_api(FakeApi())
