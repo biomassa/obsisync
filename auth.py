@@ -1,7 +1,11 @@
 import os
 import keyring
 from icloudlite import PyiCloudService
-from icloudlite.exceptions import PyiCloudFailedLoginException
+from icloudlite.exceptions import (
+    PyiCloudFailedLoginException,
+    PyiCloudNoTrustedNumberAvailable,
+    PyiCloudTrustedDevicePromptException,
+)
 from config import path_for
 from paths import data_dir
 
@@ -52,6 +56,39 @@ class TwoFactorRequired(RuntimeError):
     """Raised when a 2FA code is needed but no way to ask for one was supplied."""
 
 
+def _request_code_delivery(api):
+    """Trigger Apple's 2FA delivery and describe where the code went.
+
+    Returns a short notice for display, or None when there is nothing to say.
+    """
+    try:
+        if not api.request_2fa_code():
+            raise TwoFactorRequired(
+                "This account's two-factor challenge needs a hardware security "
+                "key, which obsisync does not support. Use a trusted device or "
+                "SMS instead."
+            )
+    except PyiCloudNoTrustedNumberAvailable as exc:
+        raise TwoFactorRequired(
+            "Apple wants to send a code by SMS but reported no trusted phone "
+            "number on the account."
+        ) from exc
+    except PyiCloudTrustedDevicePromptException as exc:
+        raise TwoFactorRequired(
+            f"Apple refused to send a code to your trusted devices: {exc}"
+        ) from exc
+
+    notice = getattr(api, "two_factor_delivery_notice", None)
+    if notice:
+        return notice
+    method = getattr(api, "two_factor_delivery_method", "unknown")
+    if method == "trusted_device":
+        return "Apple sent a code to your trusted devices."
+    if method == "sms":
+        return "Apple sent a code by SMS."
+    return None
+
+
 def authenticate(email, password=None, interactive=False, twofa_callback=None):
     """Authenticate against iCloud.
 
@@ -67,10 +104,22 @@ def authenticate(email, password=None, interactive=False, twofa_callback=None):
     api = PyiCloudService(email, password, cookie_directory=COOKIE_DIR)
 
     if api.requires_2fa:
+        # Ask Apple to deliver a code BEFORE prompting for one.
+        #
+        # This is not optional and it is not merely a notification. For a modern
+        # HSA2 account request_2fa_code() performs the trusted-device bridge
+        # handshake and records the state that validate_2fa_code() then needs.
+        # Skip it and validation falls through to the legacy verifier, which
+        # Apple rejects — so every code entered looks wrong, however many times
+        # you approve the prompt on your phone.
+        notice = _request_code_delivery(api)
+
         if twofa_callback is not None:
             code = twofa_callback(api)
         elif interactive:
             print("Two-factor authentication required.")
+            if notice:
+                print(notice)
             code = input("Enter the code sent to your devices: ")
         else:
             raise TwoFactorRequired(

@@ -30,7 +30,7 @@ class _Worker(QObject):
     """Runs the blocking parts of setup and reports back with signals."""
 
     authenticated = Signal(object)      # api
-    twoFactorNeeded = Signal(object)    # api
+    twoFactorNeeded = Signal(object)    # a delivery notice, or None
     vaultsFound = Signal(list)
     failed = Signal(str)
 
@@ -43,10 +43,10 @@ class _Worker(QObject):
         try:
             api = authenticate(email, password, interactive=False)
             self.authenticated.emit(api)
-        except TwoFactorRequired:
-            # Reaching here means credentials were accepted and only the code is
-            # missing, so re-authenticate below once we have one.
-            self.twoFactorNeeded.emit(None)
+        except TwoFactorRequired as exc:
+            # Credentials were accepted and only the code is missing. The
+            # message carries where Apple sent it, or why it could not.
+            self.twoFactorNeeded.emit(str(exc) if "sent" in str(exc).lower() else None)
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -183,6 +183,7 @@ class SetupDialog(QDialog):
         box = QVBoxLayout(page)
         label = QLabel("Enter the six-digit code Apple sent to your devices.")
         label.setWordWrap(True)
+        self.twofa_label = label
         self.code = QLineEdit()
         self.code.setPlaceholderText("123456")
         self.code.setMaxLength(6)
@@ -342,9 +343,13 @@ class SetupDialog(QDialog):
         self._set_busy(True, "Looking for Obsidian vaults…")
         self.worker.find_vaults(api)
 
-    def _on_twofa_needed(self, _api):
+    def _on_twofa_needed(self, notice):
         self._set_busy(False)
         self.stack.setCurrentIndex(PAGE_TWOFA)
+        # Saying where the code went saves people hunting for it, and makes an
+        # SMS fallback obvious when the trusted-device prompt did not arrive.
+        if notice:
+            self.twofa_label.setText(notice)
         self.message.setText("")
         self.code.setFocus()
 
@@ -384,13 +389,13 @@ class SetupDialog(QDialog):
 class TwoFactorDialog(QDialog):
     """Asks for a code when a session expires mid-run."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, notice=None):
         super().__init__(parent)
         self.setWindowTitle("iCloud needs a code")
         layout = QVBoxLayout(self)
         label = QLabel(
-            "Your iCloud session expired. Enter the six-digit code Apple sent "
-            "to your devices to carry on syncing.")
+            (notice + "\n\n" if notice else "")
+            + "Enter the six-digit code to carry on syncing.")
         label.setWordWrap(True)
         layout.addWidget(label)
         self.code = QLineEdit()

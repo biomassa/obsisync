@@ -239,11 +239,11 @@ class Application:
         if self.window is not None:
             QMessageBox.warning(self.window, "Could not connect to iCloud", reason)
 
-    def _on_twofa(self):
+    def _on_twofa(self, notice=None):
         # A code is needed to carry on syncing, so the window must come back
         # even if the user had closed it.
         self._show_window()
-        dialog = TwoFactorDialog(self.window)
+        dialog = TwoFactorDialog(self.window, notice=notice)
         code = dialog.value() if dialog.exec() == TwoFactorDialog.Accepted else None
         self.session.prompt.provide(code)
 

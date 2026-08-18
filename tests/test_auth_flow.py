@@ -31,6 +31,15 @@ class FakeApi:
         self.requires_2fa = True
         self.is_trusted_session = False
         self.validated = None
+        # obsisync asks Apple to deliver a code before validating one; without
+        # that handshake Apple rejects every code.
+        self.two_factor_delivery_method = "trusted_device"
+        self.two_factor_delivery_notice = None
+        self.requested = False
+
+    def request_2fa_code(self):
+        self.requested = True
+        return True
     def validate_2fa_code(self, code):
         self.validated = code
         self.requires_2fa = False

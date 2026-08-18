@@ -24,7 +24,7 @@ class TwoFactorPrompt(QObject):
     ``provide()``.
     """
 
-    codeRequested = Signal()
+    codeRequested = Signal(object)      # a delivery notice, or None
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,7 +35,8 @@ class TwoFactorPrompt(QObject):
         """Called from a worker thread. Returns the code, or None if cancelled."""
         self._code = None
         self._event.clear()
-        self.codeRequested.emit()
+        notice = getattr(api, "two_factor_delivery_notice", None) if api else None
+        self.codeRequested.emit(notice)
         if not self._event.wait(timeout=_CODE_TIMEOUT_SECONDS):
             return None
         return self._code

@@ -60,6 +60,7 @@ jobs:
           python tests/test_regressions.py
           python tests/test_refresh_cadence.py
           python tests/test_profile.py
+          python tests/test_2fa_flow.py
 
   build-linux:
     name: linux binary
