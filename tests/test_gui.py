@@ -77,12 +77,25 @@ check("ignore patterns saved as a list",
 check("engine log level followed the setting",
       sync_engine._current_log_level == saved["log_level"])
 
-print("\n  -- close hides to tray, does not quit --")
+print("\n  -- closing hides to tray when there is a tray --")
 from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QSystemTrayIcon
+
+# Headless runners report no tray, so the two paths must be forced explicitly
+# rather than left to the environment.
+QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: True)
 ev = QCloseEvent()
 w.show(); w.closeEvent(ev)
 check("close was ignored", not ev.isAccepted())
 check("window hidden instead", not w.isVisible())
+
+print("\n  -- with no tray, closing quits rather than vanishing --")
+QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: False)
+w2 = MainWindow(); w2.show()
+ev3 = QCloseEvent(); w2.closeEvent(ev3)
+check("close accepted when there is nowhere to hide", ev3.isAccepted())
+QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: True)
+
 w.prepare_quit()
 ev2 = QCloseEvent(); w.closeEvent(ev2)
 check("close accepted after prepare_quit", ev2.isAccepted())
