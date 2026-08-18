@@ -63,6 +63,15 @@ check("-OO not used anywhere", "--python-flag=-OO" not in FLAGS)
 check("windows console disabled for a GUI app",
       "--windows-console-mode=disable" in FLAGS)
 check("onefile requested", "--onefile" in FLAGS)
+# The default unpacks into tmpfs on most Linux systems, holding the whole
+# payload in RAM for the life of the process.
+_tempdir = [f for f in FLAGS if f.startswith("--onefile-tempdir-spec")]
+check("onefile unpacks to disk, not tmpfs", bool(_tempdir), str(_tempdir))
+check("the unpack path is stable across runs, so it unpacks once",
+      bool(_tempdir) and "{PID}" not in _tempdir[0] and "{TIME}" not in _tempdir[0],
+      str(_tempdir))
+check("the unpack path is versioned so upgrades do not collide",
+      bool(_tempdir) and "{VERSION}" in _tempdir[0], str(_tempdir))
 
 print("\n== icons ==")
 for name, minimum in (("icon.svg", 200), ("icon.png", 1000), ("icon.ico", 2000)):

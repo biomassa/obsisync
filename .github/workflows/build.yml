@@ -182,6 +182,7 @@ jobs:
           name: linux
           path: |
             dist/obsisync-x86_64.AppImage
+            dist/obsisync
             dist/*.deb
           if-no-files-found: error
 
@@ -277,5 +278,12 @@ jobs:
           body: |
             **Back up your vault before using this.** It moves and deletes files.
 
+            **Linux — `obsisync-x86_64.AppImage` is the recommended download.**
+            It runs on any distro, needs no install, and is mounted rather than
+            unpacked, so it does not hold its payload in RAM.
+
+            - Linux: `obsisync-x86_64.AppImage`, or `.deb` / `.pkg.tar.zst` to install
+              system-wide, or the bare `obsisync` binary
             - Windows: `obsisync-setup-*.exe` (installer) or `obsisync.exe` (standalone)
-            - Linux: `obsisync-x86_64.AppImage` (any distro), `.deb`, or `.pkg.tar.zst`
+
+            Back up your vault before first use.
