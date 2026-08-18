@@ -67,8 +67,10 @@ _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 def _win_enable():
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0,
-                        winreg.KEY_SET_VALUE) as key:
+    # CreateKeyEx, not OpenKey: the Run key is usually present but not
+    # guaranteed, and OpenKey raises FileNotFoundError when it is missing.
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0,
+                            winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, APP_ID, 0, winreg.REG_SZ, _executable_command())
 
 
@@ -79,7 +81,7 @@ def _win_disable():
                             winreg.KEY_SET_VALUE) as key:
             winreg.DeleteValue(key, APP_ID)
     except FileNotFoundError:
-        pass
+        pass          # neither the key nor the value exists; nothing to remove
 
 
 def _win_enabled():
@@ -89,7 +91,7 @@ def _win_enabled():
                             winreg.KEY_READ) as key:
             winreg.QueryValueEx(key, APP_ID)
             return True
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError):
         return False
 
 

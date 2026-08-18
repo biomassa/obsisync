@@ -53,15 +53,22 @@ check("nothing skipped on a clean destination", not r["skipped"], str(r["skipped
 cfg = json.load(open(os.path.join(DST_CFG, "config.json")))
 check("web_port dropped (no web UI here)", "web_port" not in cfg, str(cfg))
 check("vault settings carried over", cfg["vault_name"] == "V")
-n = sqlite3.connect(os.path.join(DST_DATA, "sync_state.db")).execute(
-    "select count(*) from file_states").fetchone()[0]
+def _count(path):
+    # Close the handle: Windows refuses to delete or replace an open file, so a
+    # leaked connection makes the next import fail with PermissionError.
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return conn.execute("select count(*) from file_states").fetchone()[0]
+    finally:
+        conn.close()
+
+n = _count(os.path.join(DST_DATA, "sync_state.db"))
 check("database arrived populated, not empty", n == 42, str(n))
 
 print("\n== the source install is untouched ==")
 check("iObsi config still there", os.path.isfile(os.path.join(LEGACY, "config.json")))
 check("iObsi database still there", os.path.isfile(db))
-check("iObsi database still populated",
-      sqlite3.connect(db).execute("select count(*) from file_states").fetchone()[0] == 42)
+check("iObsi database still populated", _count(db) == 42)
 
 print("\n== re-import is refused, and skips are reported ==")
 try:
@@ -80,8 +87,7 @@ os.remove(os.path.join(DST_CFG, "config.json"))
 open(os.path.join(DST_DATA, "sync_state.db"), "w").write("")   # the stray empty one
 r3 = migrate.import_from_iobsi(force=True)
 check("force copies the database", "sync_state.db" in r3["copied"], str(r3))
-n3 = sqlite3.connect(os.path.join(DST_DATA, "sync_state.db")).execute(
-    "select count(*) from file_states").fetchone()[0]
+n3 = _count(os.path.join(DST_DATA, "sync_state.db"))
 check("forced copy is the populated one", n3 == 42, str(n3))
 
 shutil.rmtree(S, ignore_errors=True)

@@ -66,19 +66,29 @@ check("deletions notify independently of ignores", len(sent) == 3, f"{len(sent)}
 print("\n== autostart ==")
 from gui import autostart
 check("supported on this platform", autostart.supported())
-os.environ["XDG_CONFIG_HOME"] = S     # keep the real autostart dir untouched
-was = autostart.is_enabled()
-autostart.set_enabled(True)
-check("enabling writes a desktop entry", autostart.is_enabled())
-entry = open(os.path.join(S, "autostart", "obsisync.desktop")).read()
-check("entry is a valid desktop file", entry.startswith("[Desktop Entry]"))
-check("entry has an Exec line", "Exec=" in entry)
-check("entry does not try to exec a .py directly",
-      ".py\n" not in entry.split("Exec=")[1].split("\n")[0] + "\n"
-      or "-m gui.app" in entry)
-autostart.set_enabled(False)
-check("disabling removes it", not autostart.is_enabled())
-check("disabling twice is safe", (autostart.set_enabled(False), True)[1])
+check("command is quoted and runnable",
+      autostart._executable_command().startswith('"'))
+check("running from source launches the module, not a bare .py",
+      "-m gui.app" in autostart._executable_command() or getattr(sys, "frozen", False))
+
+if sys.platform == "win32":
+    # Enabling here would write to the real HKCU Run key of the machine running
+    # the tests, so only the platform-independent parts are exercised.
+    print("  (skipping OS writes on Windows: they would touch the real registry)")
+else:
+    os.environ["XDG_CONFIG_HOME"] = S     # keep the real autostart dir untouched
+    was = autostart.is_enabled()
+    autostart.set_enabled(True)
+    check("enabling writes a desktop entry", autostart.is_enabled())
+    entry = open(os.path.join(S, "autostart", "obsisync.desktop")).read()
+    check("entry is a valid desktop file", entry.startswith("[Desktop Entry]"))
+    check("entry has an Exec line", "Exec=" in entry)
+    check("entry does not try to exec a .py directly",
+          ".py\n" not in entry.split("Exec=")[1].split("\n")[0] + "\n"
+          or "-m gui.app" in entry)
+    autostart.set_enabled(False)
+    check("disabling removes it", not autostart.is_enabled())
+    check("disabling twice is safe", (autostart.set_enabled(False), True)[1])
 
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
