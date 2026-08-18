@@ -148,7 +148,7 @@ jobs:
         id: ver
         run: |
           V="${GITHUB_REF_NAME#v}"
-          case "$V" in [0-9]*) ;; *) V="0.1.1" ;; esac
+          case "$V" in [0-9]*) ;; *) V="0.1.2" ;; esac
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "package version: $V"
 
@@ -253,7 +253,7 @@ jobs:
       - name: Build installer
         run: |
           $v = "${env:GITHUB_REF_NAME}" -replace '^v',''
-          if ($v -notmatch '^\d') { $v = '0.1.1' }
+          if ($v -notmatch '^\d') { $v = '0.1.2' }
           Write-Host "installer version: $v"
 
           # NSIS ships with the runner image but is not on PATH.

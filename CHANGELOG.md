@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.2 — 2026-08-18
+
+### Fixed
+
+- A note added on another device could take up to twice the poll interval to appear. The remote
+  cache expired after a hardcoded 120 seconds while the daemon woke every 120 seconds, so a strict
+  comparison failed and every second cycle used the cached tree. The cache lifetime now comes from
+  `poll_interval`, so changing that setting also changes how often obsisync fetches the remote.
+- A window opened from the tray showed empty tiles and "connecting...". The status poll emits only
+  on a change, and the bridge outlives the window, so a new window received nothing until something
+  altered the status.
+- Closing the window destroys it, so the compositor releases its buffers. Hiding alone freed
+  nothing.
+- Stored and live log entries use the same clock. Stored entries were UTC and live entries local.
+
+### Added
+
+- **Clear stats** button on the dashboard. It zeroes the totals and leaves the tracked file count.
+- Instructions for building on Linux, in the README.
+
+### Changed
+
+- The bare `obsisync` binary is no longer published. The AppImage covers the same use and the
+  release listed the binary at four times its real size.
+
 ## 0.1.1 — 2026-08-18
 
 First release that anyone can install and use.
