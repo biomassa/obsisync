@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+config.json
+session/
+sync_state.db
+*.log
+nohup.out
+
+# build output
+build/
+dist/
+*.build/
+*.dist/
+*.onefile-build/
+*.spec
+
+# local agent notes
+AGENTS.md
+CLAUDE.md

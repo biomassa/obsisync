@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#0d1117"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#30363d"/>
+  <!-- bidirectional sync: up = uploaded (green), down = downloaded (blue) -->
+  <g fill="#3fb950">
+    <path d="M9.5 12 h3 v13 h-3 z"/>
+    <path d="M7 13 L15 13 L11 6 Z"/>
+  </g>
+  <g fill="#58a6ff">
+    <path d="M19.5 7 h3 v13 h-3 z"/>
+    <path d="M17 19 L25 19 L21 26 Z"/>
+  </g>
+</svg>
