@@ -67,6 +67,15 @@ check("onefile requested", "--onefile" in FLAGS)
 # payload in RAM for the life of the process.
 _tempdir = [f for f in FLAGS if f.startswith("--onefile-tempdir-spec")]
 check("onefile unpacks to disk, not tmpfs", bool(_tempdir), str(_tempdir))
+# Windows %TEMP% is already on disk, and a stable path there breaks a second
+# launch: Windows locks loaded .pyd files, so the extraction cannot be rewritten
+# while another instance holds them open.
+_guarded = False
+for _node in ast.walk(_tree):
+    if isinstance(_node, ast.If) and "linux" in ast.dump(_node.test):
+        if "--onefile-tempdir-spec" in ast.dump(_node):
+            _guarded = True
+check("the tempdir override sits inside a Linux-only branch", _guarded)
 check("the unpack path is stable across runs, so it unpacks once",
       bool(_tempdir) and "{PID}" not in _tempdir[0] and "{TIME}" not in _tempdir[0],
       str(_tempdir))

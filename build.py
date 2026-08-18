@@ -18,9 +18,10 @@ failed without it:
   binary aborts on stderr while still exiting 0.
 * ``-O`` rather than ``-OO`` — the extra O strips docstrings, and Click derives
   its ``--help`` text from them, so the compiled CLI would document nothing.
-* ``--onefile-tempdir-spec`` pointing at the cache directory — the default
-  unpacks to ``/tmp``, which is tmpfs on most Linux systems, so the payload sits
-  in RAM. See the comment beside the flag.
+* ``--onefile-tempdir-spec`` pointing at the cache directory, **on Linux only**
+  — the default unpacks to ``/tmp``, which is tmpfs on most Linux systems, so
+  the payload sits in RAM. See the comment beside the flag for why Windows must
+  keep the default.
 """
 import argparse
 import os
@@ -76,13 +77,18 @@ def build(onefile=True, output_dir="dist", jobs=None):
     ]
     if onefile:
         cmd.append("--onefile")
-        # By default onefile unpacks into $TMPDIR, which on most Linux systems
-        # is tmpfs — a RAM disk. That costs ~179 MB of RAM held for the life of
-        # the process, plus ~90 MB of mappings counted as shared memory, for a
-        # program whose own heap is ~74 MB. Extracting to the on-disk cache
-        # instead removes that entirely, and because the path is stable the
-        # payload is unpacked once rather than on every launch.
-        cmd.append("--onefile-tempdir-spec={CACHE_DIR}/{PRODUCT}/{VERSION}")
+        if sys.platform.startswith("linux"):
+            # On most Linux systems $TMPDIR is tmpfs — a RAM disk — so the
+            # default unpack location costs ~179 MB of RAM held for the life of
+            # the process, in a program whose own heap is ~74 MB. Unpacking to
+            # the on-disk cache removes that, and the stable path means the
+            # payload is extracted once rather than on every launch.
+            #
+            # Linux only. Windows %TEMP% is already on disk, so there is nothing
+            # to fix there, and a stable path actively breaks: Windows locks
+            # loaded .pyd files, so a second instance cannot rewrite the
+            # extraction directory that a running one holds open.
+            cmd.append("--onefile-tempdir-spec={CACHE_DIR}/{PRODUCT}/{VERSION}")
     for mod in _UNUSED_QT:
         cmd.append(f"--nofollow-import-to={mod}")
 
