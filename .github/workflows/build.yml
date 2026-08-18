@@ -139,7 +139,20 @@ jobs:
           ./appimagetool-x86_64.AppImage --appimage-extract-and-run "$APPDIR" \
             dist/obsisync-x86_64.AppImage
 
+      # GITHUB_* names are reserved and cannot be overridden with env:, so a push
+      # to main left GITHUB_REF_NAME as "main" and produced an invalid Debian
+      # version. Actions expressions have no substring(), so derive it in shell.
+      - name: Determine package version
+        id: ver
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          case "$V" in [0-9]*) ;; *) V="0.1.0" ;; esac
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "package version: $V"
+
       - name: Package .deb
+        env:
+          PKG_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -eux
           PKG=build/deb
@@ -151,7 +164,7 @@ jobs:
              "$PKG/usr/share/applications/obsisync.desktop"
           cat > "$PKG/DEBIAN/control" <<EOF
           Package: obsisync
-          Version: ${GITHUB_REF_NAME#v}-1
+          Version: ${PKG_VERSION}-1
           Section: utils
           Priority: optional
           Architecture: amd64
@@ -160,9 +173,8 @@ jobs:
            Native desktop client for keeping an Obsidian vault in sync between
            iCloud Drive and a Linux machine.
           EOF
-          dpkg-deb --build "$PKG" "dist/obsisync_${GITHUB_REF_NAME#v}_amd64.deb"
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name == 'main' && 'v0.1.0' || github.ref_name }}
+          dpkg-deb --build "$PKG" "dist/obsisync_${PKG_VERSION}_amd64.deb"
+
 
       - uses: actions/upload-artifact@v4
         with:
@@ -232,7 +244,11 @@ jobs:
             || (Write-Error "compiled CLI lost its help text"; exit 1)
 
       - name: Build installer
-        run: makensis /DVERSION=${{ github.ref_name }} packaging\windows\installer.nsi
+        run: |
+          $v = "${env:GITHUB_REF_NAME}" -replace '^v',''
+          if ($v -notmatch '^\d') { $v = '0.1.0' }
+          Write-Host "installer version: $v"
+          makensis /DVERSION=$v packaging\windows\installer.nsi
 
       - uses: actions/upload-artifact@v4
         with:

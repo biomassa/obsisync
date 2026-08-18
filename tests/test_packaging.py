@@ -87,6 +87,21 @@ try:
     check("patchelf installed (standalone linux builds need it)", "patchelf" in linux_steps)
     check("compiled binary is smoke-tested before packaging",
           "--version" in linux_steps)
+    # GitHub Actions has a fixed, small set of expression functions. Using one
+    # that does not exist (substring(), say) fails only at evaluation time, deep
+    # into a run — worth catching here instead.
+    import re as _re
+    _wf_text = open(os.path.join(ROOT, ".github", "workflows", "build.yml")).read()
+    _known = {"contains", "startsWith", "endsWith", "format", "join", "toJSON",
+              "fromJSON", "hashFiles", "success", "always", "cancelled", "failure"}
+    _used = set()
+    for expr in _re.findall(r"\$\{\{(.*?)\}\}", _wf_text, _re.S):
+        _used |= set(_re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", expr))
+    check("workflow uses only real Actions expression functions",
+          not (_used - _known), f"unknown: {sorted(_used - _known)}")
+    check("reserved GITHUB_* names are not overridden via env:",
+          not _re.search(r"^\s+GITHUB_[A-Z_]+:", _wf_text, _re.M))
+
     check("built on old glibc for wide compatibility",
           jobs["build-linux"]["runs-on"] == "ubuntu-22.04", jobs["build-linux"]["runs-on"])
 except ImportError:

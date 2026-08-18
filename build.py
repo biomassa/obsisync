@@ -26,6 +26,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+VERSION = "0.1.0"
 ENTRY = os.path.join(ROOT, "obsisync.py")
 
 # Qt ships far more than this app uses. Excluding them is pure size win.
@@ -63,6 +64,10 @@ def build(onefile=True, output_dir="dist", jobs=None):
         "--output-filename=obsisync",
         "--company-name=obsisync",
         "--product-name=obsisync",
+        # Nuitka rejects partial version metadata: give a company or product
+        # name and it demands a version too.
+        f"--file-version={VERSION}",
+        f"--product-version={VERSION}",
         "--file-description=Obsidian iCloud sync",
         "--remove-output",
     ]
