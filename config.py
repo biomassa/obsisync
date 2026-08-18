@@ -1,13 +1,15 @@
 import json
 import os
 
-CONFIG_DIR = os.path.expanduser("~/.config/obsidian-icloud-sync")
+from paths import config_dir, default_vault_path
+
+CONFIG_DIR = config_dir()
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 DEFAULT_CONFIG = {
     "apple_id": "",
     "vault_name": "",
-    "local_path": "/home/dingus/obsi",
+    "local_path": default_vault_path(),
     "web_port": 11111,
     "poll_interval": 120,
     "conflict_strategy": "last-writer-wins",

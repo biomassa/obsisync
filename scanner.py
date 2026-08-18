@@ -5,6 +5,7 @@ import datetime
 import concurrent.futures
 
 from filters import should_ignore
+from paths import to_key
 
 
 def _log(level, message):
@@ -27,13 +28,16 @@ def scan_local(vault_path, extra_ignore=None):
     vault_path = os.path.abspath(vault_path)
     for dirpath, dirnames, filenames in os.walk(vault_path):
         for d in list(dirnames):
-            rel = os.path.relpath(os.path.join(dirpath, d), vault_path)
+            rel = to_key(os.path.relpath(os.path.join(dirpath, d), vault_path))
             if should_ignore(rel, extra_ignore):
                 dirnames.remove(d)
 
         for fname in filenames:
             abspath = os.path.join(dirpath, fname)
-            rel = os.path.relpath(abspath, vault_path)
+            # Canonical POSIX key: the remote scan produces this form, and both
+            # sides must agree or every nested file looks local-only AND
+            # remote-only at once.
+            rel = to_key(os.path.relpath(abspath, vault_path))
             if should_ignore(rel, extra_ignore):
                 continue
             try:

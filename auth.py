@@ -3,9 +3,29 @@ import keyring
 from pyicloud import PyiCloudService
 from pyicloud.exceptions import PyiCloudFailedLoginException
 from config import path_for
+from paths import data_dir
 
-SERVICE_NAME = "obsidian-icloud-sync"
-COOKIE_DIR = path_for("session")
+SERVICE_NAME = "obsisync"
+COOKIE_DIR = os.path.join(data_dir(), "session")
+
+
+def _assert_secure_keyring():
+    """Refuse to store an Apple ID password in a plaintext backend.
+
+    keyring resolves its backend dynamically at runtime. In a compiled binary the
+    real backend can fail to load and keyrings.alt can win the priority contest,
+    which would silently write the password to a plaintext file. Fail loudly
+    instead.
+    """
+    backend = keyring.get_keyring()
+    name = f"{type(backend).__module__}.{type(backend).__name__}"
+    if "keyrings.alt" in name or "fail" in name.lower():
+        raise RuntimeError(
+            f"No secure credential store available (keyring selected {name}). "
+            "On Linux install gnome-keyring or kwallet and ensure a session is "
+            "running; on Windows the Credential Manager should be used."
+        )
+    return name
 
 
 def _ensure_cookie_dir():
@@ -13,6 +33,7 @@ def _ensure_cookie_dir():
 
 
 def save_password(email, password):
+    _assert_secure_keyring()
     keyring.set_password(SERVICE_NAME, email, password)
 
 

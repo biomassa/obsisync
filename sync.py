@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import sys
 import signal
@@ -8,7 +9,10 @@ import time
 import click
 
 from config import load, save, path_for, CONFIG_DIR, CONFIG_FILE
+from paths import default_vault_path
 from state_db import init as db_init, log as db_log
+import keyring
+
 from auth import authenticate, discover_vaults, find_vault_root, save_password, get_password, clear_password
 from sync_engine import (
     daemon_loop, run_sync_cycle, shutdown as engine_shutdown,
@@ -129,7 +133,7 @@ def setup():
         click.echo("No Obsidian vaults auto-discovered.")
         vault_name = click.prompt("Enter vault path on iCloud Drive", default="Obsidian/Obsidian")
 
-    local_path = click.prompt("Local vault path", default="/home/dingus/obsi")
+    local_path = click.prompt("Local vault path", default=default_vault_path())
 
     cfg = load()
     cfg["apple_id"] = email
@@ -175,6 +179,59 @@ def clear_stats():
     set_meta("last_sync", "")
     clear_logs()
     click.echo("Statistics and logs cleared.")
+
+
+@cli.command("import-from-iobsi")
+def import_from_iobsi():
+    """Copy config, session and sync state from an existing iObsi install.
+
+    Deliberately a copy, not a move: iObsi may still be installed and running
+    against its own directory, and nothing here should break it. Note that
+    running both daemons against the same vault at once is a bad idea.
+    """
+    import shutil
+    from paths import LEGACY_CONFIG_DIR, legacy_config_exists, config_dir, data_dir
+
+    if not legacy_config_exists():
+        click.echo(f"No iObsi config found at {LEGACY_CONFIG_DIR}", err=True)
+        sys.exit(1)
+
+    os.makedirs(config_dir(), exist_ok=True)
+    os.makedirs(data_dir(), exist_ok=True)
+
+    copied = []
+    src_cfg = os.path.join(LEGACY_CONFIG_DIR, "config.json")
+    dst_cfg = os.path.join(config_dir(), "config.json")
+    if os.path.exists(dst_cfg):
+        click.echo(f"Refusing to overwrite existing config at {dst_cfg}", err=True)
+        sys.exit(1)
+    cfg = json.load(open(src_cfg))
+    cfg.pop("web_port", None)          # no web UI in obsisync
+    with open(dst_cfg, "w") as f:
+        json.dump(cfg, f, indent=2)
+    copied.append("config.json")
+
+    for name in ("session", "sync_state.db"):
+        src = os.path.join(LEGACY_CONFIG_DIR, name)
+        dst = os.path.join(data_dir(), name)
+        if not os.path.exists(src) or os.path.exists(dst):
+            continue
+        (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, dst)
+        copied.append(name)
+
+    # The keyring service name differs, so the stored password must be re-keyed.
+    email = cfg.get("apple_id")
+    if email:
+        old_pw = keyring.get_password("obsidian-icloud-sync", email)
+        if old_pw:
+            save_password(email, old_pw)
+            copied.append("keyring password")
+
+    click.echo(f"Imported from iObsi: {', '.join(copied)}")
+    click.echo(f"  config -> {config_dir()}")
+    click.echo(f"  state  -> {data_dir()}")
+    click.echo("\niObsi's own files were left untouched.")
+    click.echo("Do not run both daemons against the same vault at the same time.")
 
 
 @cli.command()

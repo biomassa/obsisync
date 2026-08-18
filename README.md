@@ -5,8 +5,8 @@ Native desktop app to keep an Obsidian vault in sync between iCloud Drive and Li
 > ## ⚠️ Early stage — not usable yet
 >
 > This repository currently contains **only the sync engine**, carried over from
-> [iObsi](https://github.com/biomassa/iObsi). There is no GUI yet, and the engine
-> **does not work on Windows** until the path-handling rewrite lands (see the roadmap).
+> [iObsi](https://github.com/biomassa/iObsi). There is no GUI yet, and nothing has been
+> verified on real Windows hardware.
 >
 > If you want something that works today, on Linux, use [iObsi](https://github.com/biomassa/iObsi).
 
@@ -23,15 +23,16 @@ macOS is deliberately out of scope, since iCloud Drive sync is native there.
 | Area | State |
 |---|---|
 | Sync engine (scan, diff, upload/download, conflicts, deletion guards) | works, carried over from iObsi |
-| Windows support | **broken** — path separators, config locations, process lifecycle |
+| Cross-platform paths, config locations, shutdown | done — engine is Windows-capable |
+| Windows end-to-end verification | not yet run on real hardware |
 | Native GUI | not started |
 | Tray, autostart, notifications | not started |
 | Installers (Windows / AppImage / deb / Arch) | not started |
 
 ## Roadmap
 
-1. **Portability** — canonical path handling, `platformdirs` config locations, clean shutdown,
-   explicit keyring backends. This is what makes Windows possible at all.
+1. ~~**Portability** — canonical path handling, `platformdirs` config locations, clean shutdown,
+   explicit keyring backends.~~ Done.
 2. **GUI** — PySide6 main window: stats, logs, conflicts, settings.
 3. **Setup wizard and re-auth** — including the 2FA prompt, which the daemon currently cannot ask for
    (it just dies when the iCloud session expires).
@@ -64,7 +65,8 @@ gui/             native Qt front end
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-python tests/test_engine.py     # engine regression suite
+python tests/test_engine.py       # engine regression suite (62 checks)
+python tests/test_portability.py  # cross-platform path handling (24 checks)
 python sync.py --help
 ```
 

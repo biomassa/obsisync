@@ -1,9 +1,10 @@
 import sqlite3
 import os
 import threading
-from config import path_for
+from paths import data_dir
 
-DB_PATH = path_for("sync_state.db")
+os.makedirs(data_dir(), exist_ok=True)
+DB_PATH = os.path.join(data_dir(), "sync_state.db")
 
 _local = threading.local()
 
