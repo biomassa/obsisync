@@ -30,7 +30,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.1.0"
+sys.path.insert(0, ROOT)
+from _version import __version__ as VERSION  # noqa: E402
 ENTRY = os.path.join(ROOT, "obsisync.py")
 
 # Qt ships far more than this app uses. Excluding them is pure size win.

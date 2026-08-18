@@ -23,7 +23,8 @@ def main():
         return cli(standalone_mode=True)
 
     if argv and argv[0] in ("--version", "-V"):
-        print("obsisync 0.1.0")
+        from _version import __version__
+        print(f"obsisync {__version__}")
         return 0
 
     from gui.app import main as gui_main

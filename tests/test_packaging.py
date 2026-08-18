@@ -82,6 +82,25 @@ check("the unpack path is stable across runs, so it unpacks once",
 check("the unpack path is versioned so upgrades do not collide",
       bool(_tempdir) and "{VERSION}" in _tempdir[0], str(_tempdir))
 
+print("\n== the version is stated once ==")
+import re as _re2
+sys.path.insert(0, ROOT)
+from _version import __version__ as VERSION
+check("the version looks like a release", _re2.match(r"^\d+\.\d+\.\d+$", VERSION), VERSION)
+check("build.py takes the version from _version",
+      "from _version import" in open(os.path.join(ROOT, "build.py")).read())
+check("the entry point takes it from _version",
+      "from _version import" in open(os.path.join(ROOT, "obsisync.py")).read())
+check("pyproject derives it rather than repeating it",
+      'attr = "_version.__version__"' in open(os.path.join(ROOT, "pyproject.toml")).read())
+# These cannot import python, so they carry a literal that must not drift.
+for name, path in (("PKGBUILD", "PKGBUILD"),
+                   ("installer.nsi", os.path.join("packaging", "windows", "installer.nsi")),
+                   ("workflow", os.path.join(".github", "workflows", "build.yml"))):
+    body = open(os.path.join(ROOT, path)).read()
+    stale = [v for v in _re2.findall(r"\b\d+\.\d+\.\d+\b", body) if v != VERSION]
+    check(f"{name} carries no stale version", not stale, f"found {sorted(set(stale))}")
+
 print("\n== icons ==")
 for name, minimum in (("icon.svg", 200), ("icon.png", 1000), ("icon.ico", 2000)):
     p = os.path.join(ROOT, "assets", name)

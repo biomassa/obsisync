@@ -1,6 +1,6 @@
 [project]
 name = "obsisync"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Native desktop app to sync an Obsidian vault with iCloud Drive on Linux and Windows"
 readme = "README.md"
 license = "MIT"
@@ -37,6 +37,9 @@ Homepage = "https://github.com/biomassa/obsisync"
 # This is an application, not a library, so its layout is flat rather than src/.
 # setuptools refuses to guess in that case and must be told explicitly, or
 # `pip install -e .` fails with "Multiple top-level packages discovered".
+[tool.setuptools.dynamic]
+version = { attr = "_version.__version__" }
+
 [tool.setuptools]
 packages = ["gui", "icloudlite", "icloudlite.services", "icloudlite.common"]
 py-modules = [
