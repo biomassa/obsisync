@@ -2,8 +2,8 @@
 
 > ## ⚠️ WINDOWS VERSION NON-FUNCTIONAL YET, LINUX ONLY FOR NOW
 >
-> The Windows build compiles and starts, but nobody tested it on real hardware. Use the Linux
-> build.
+> The Windows build does not start. It compiles, and it passes the tests and the smoke test in CI,
+> but on a real machine it exits without a window and without a message. Use the Linux build.
 
 A native desktop application that keeps an Obsidian vault in sync between iCloud Drive and Linux
 or Windows.
@@ -35,7 +35,7 @@ The program runs and syncs a real vault on Linux. Some parts are still new.
 | Tray icon, start on login, desktop notifications | works |
 | Import from iObsi | works |
 | Linux packages: AppImage, `.deb`, Arch | built by CI |
-| Windows binary and installer | **not functional yet** — builds and starts, never run on real hardware |
+| Windows binary and installer | **does not start** — compiles and passes CI, but exits silently on a real machine |
 
 The test suite runs 293 checks on Linux and Windows. The checks replace iCloud with a stub, so they
 prove the logic and not the network behavior.

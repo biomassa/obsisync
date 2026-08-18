@@ -1,5 +1,25 @@
 # Changelog
 
+## Known issues
+
+- **The Windows build does not start.** It compiles, and CI runs the tests and a smoke test against
+  the binary, but on a real machine it exits with no window and no message. Linux is unaffected.
+  See "Debugging the Windows build" below.
+
+### Debugging the Windows build
+
+Start here next time. A silent exit with no message is the expected symptom of
+`--windows-console-mode=disable` in `build.py`: it detaches the console, so a startup exception has
+nowhere to print. Steps in order of cost:
+
+1. Build without that flag and run the result from a terminal. The traceback should then appear.
+2. Check for a missing dynamic import. `keyring.backends` is already forced in; `platformdirs`,
+   `srp` and the `cryptography` bindings are the next candidates.
+3. Check the unpack directory. The Linux tempdir override is deliberately not applied on Windows,
+   so the payload goes to `%TEMP%`; a failure there would also be silent.
+4. Windows Event Viewer, under Application, records a faulting module for a crash before Python
+   starts.
+
 ## 0.1.3 — 2026-08-18
 
 Signing in with an Apple ID now works. Earlier versions could not complete a first-time sign-in, so

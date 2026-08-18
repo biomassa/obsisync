@@ -308,8 +308,9 @@ jobs:
 
             ## ⚠️ Linux only for now
 
-            The Windows build compiles and starts, but nobody tested it on real
-            hardware, so it is not published here. Only Linux downloads are below.
+            The Windows build does not start on a real machine. It exits with no
+            window and no message, although it compiles and passes CI. It is
+            therefore not published here. Only Linux downloads are below.
 
             ### Which file do I download?
 
