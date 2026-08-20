@@ -42,6 +42,18 @@ daemon is doing.
   recovery was restarting the app. Every request now has a 10-second connect timeout and a
   60-second read timeout unless the caller sets its own.
 
+- **A local edit could wait up to two minutes to sync.** The watcher accepted ignore patterns and
+  never applied them, and no caller passed any. An ignored file still counted as "something
+  changed", so Obsidian rewriting `.obsidian/workspace.json` spent the one allowed trigger per 30
+  seconds on a cycle with nothing to do — and the real note edit that followed was dropped and left
+  to the next poll. The watcher now filters events through the same patterns the scans use.
+
+### Changed
+
+- **The watcher waits 3 seconds after writing stops** instead of 0.3, so a note is not uploaded
+  mid-save while you are still typing. The 30-second floor between watcher-driven cycles is
+  unchanged, so a long editing session uploads about twice a minute rather than continuously.
+
 ### Added
 
 - **A "recent activity" panel on the dashboard**, showing the last 10 log lines, as iObsi has.

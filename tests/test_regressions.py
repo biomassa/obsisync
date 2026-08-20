@@ -341,6 +341,62 @@ check("the panel does not swallow the spare height of the window",
       dash5.activity.parentWidget().sizePolicy().verticalPolicy()
       == QSizePolicy.Maximum)
 
+print("\n== a workspace write no longer eats the watcher's trigger ==")
+# The watcher accepted ignore_patterns and never applied them. An ignored file
+# still counted as "something changed", so Obsidian rewriting
+# .obsidian/workspace.json spent the one trigger per 30s on a cycle with
+# nothing to do, and the real note edit that followed was dropped.
+import time as _time
+import watcher as _watcher
+from watchdog.events import FileModifiedEvent, FileMovedEvent
+import sync_engine as _se
+
+VAULT = "/home/dingus/obsi"
+handler = _watcher.VaultEventHandler(VAULT, ["*.scratch"])
+
+def _fires(event):
+    _se._sync_trigger.clear()
+    _se._watchdog_suppress_until = 0.0
+    handler.on_modified(event) if isinstance(event, FileModifiedEvent) else \
+        handler.on_moved(event)
+    _time.sleep(_watcher._QUIET_PERIOD_SECONDS + 0.4)
+    return _se._sync_trigger.is_set()
+
+handler._last_trigger = 0.0
+check("a default-ignored file does not trigger a sync",
+      not _fires(FileModifiedEvent(f"{VAULT}/.obsidian/workspace.json")))
+check("it does not consume the rate limit either", handler._last_trigger == 0.0)
+check("a note edit straight afterwards still triggers",
+      _fires(FileModifiedEvent(f"{VAULT}/Daily/note.md")))
+
+handler._last_trigger = 0.0
+check("a config-ignored file does not trigger",
+      not _fires(FileModifiedEvent(f"{VAULT}/notes/tmp.scratch")))
+handler._last_trigger = 0.0
+check("a non-ignored .obsidian file still triggers",
+      _fires(FileModifiedEvent(f"{VAULT}/.obsidian/appearance.json")))
+
+handler._last_trigger = 0.0
+check("moving a note into .trash/ still triggers (it is a deletion)",
+      _fires(FileMovedEvent(f"{VAULT}/Daily/note.md", f"{VAULT}/.trash/note.md")))
+handler._last_trigger = 0.0
+check("a move between two ignored paths does not",
+      not _fires(FileMovedEvent(f"{VAULT}/a.scratch", f"{VAULT}/b.scratch")))
+
+handler._last_trigger = 0.0
+check("a path outside the vault is not silently ignored",
+      _fires(FileModifiedEvent("/somewhere/else/note.md")))
+
+check("both callers pass the configured patterns",
+      "ignore_patterns" in open("gui/session.py").read()
+      and "ignore_patterns" in open("sync.py").read())
+
+check("the quiet period is long enough to outlast an editor's autosave",
+      _watcher._QUIET_PERIOD_SECONDS >= 2.0, str(_watcher._QUIET_PERIOD_SECONDS))
+check("a long editing session is still rate limited",
+      _watcher._MIN_INTERVAL_SECONDS >= 30, str(_watcher._MIN_INTERVAL_SECONDS))
+_se._sync_trigger.clear()
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)

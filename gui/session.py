@@ -117,7 +117,8 @@ class SessionManager(QObject):
 
         local_path = cfg.get("local_path", "")
         if os.path.isdir(local_path):
-            self._watcher = VaultWatcher(local_path)
+            self._watcher = VaultWatcher(
+                local_path, cfg.get("ignore_patterns"))
             self._watcher.start()
 
         self.daemonStarted.emit()

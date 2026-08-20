@@ -56,7 +56,7 @@ def run(cfg_path):
     watcher = None
     local_path = cfg["local_path"]
     if os.path.isdir(local_path):
-        watcher = VaultWatcher(local_path)
+        watcher = VaultWatcher(local_path, cfg.get("ignore_patterns"))
         watcher.start()
 
     click.echo("Sync daemon running. Press Ctrl-C to stop.")
