@@ -12,7 +12,9 @@ import os
 import weakref
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPalette
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QPalette, QTextCharFormat, QTextCursor,
+)
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
@@ -247,6 +249,9 @@ class DashboardPage(QWidget):
         layout.addWidget(self.ignored)
 
         activity = QGroupBox("recent activity")
+        # Without this the box takes every spare pixel in the window and the
+        # text sits marooned in the middle of it.
+        activity.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         activity_layout = QVBoxLayout(activity)
         activity_layout.setContentsMargins(6, 6, 6, 6)
         self.activity = QPlainTextEdit()
@@ -255,11 +260,15 @@ class DashboardPage(QWidget):
         # and old entries fall off the top without any bookkeeping here.
         self.activity.setMaximumBlockCount(_ACTIVITY_LINES)
         self.activity.setFont(QFont("monospace"))
-        self.activity.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.activity.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.activity.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.activity.setFrameShape(QFrame.NoFrame)
         self.activity.setPlaceholderText("waiting for the first sync…")
         # Size to the line count instead of stretching: the panel sits under the
         # alert banners and must not push them off a short window.
+        # Ten rows tall. A long message wraps onto a second row and so shows
+        # fewer than ten entries at once; the view stays pinned to the newest
+        # line, and the Logs page holds everything.
         rows = QFontMetrics(self.activity.font()).lineSpacing() * _ACTIVITY_LINES
         self.activity.setFixedHeight(rows + 12)
         activity_layout.addWidget(self.activity)
@@ -353,15 +362,30 @@ class DashboardPage(QWidget):
         level = entry.get("level", "")
         stamp = (entry.get("timestamp") or "")[-8:]        # time, not the date
         line = f"{stamp}  {level:<5}  {entry.get('message', '')}"
-        colour = _ACTIVITY_COLOURS.get(level)
-        if colour is None:
-            self.activity.appendPlainText(line)
-            return
-        # appendHtml still counts as one block, so the ten-line cap holds. The
-        # text is escaped because a filename may contain < or &.
-        from html import escape
-        self.activity.appendHtml(
-            f'<span style="color:{colour}; white-space:pre">{escape(line)}</span>')
+        self._append_activity(line, _ACTIVITY_COLOURS.get(level))
+
+    def _append_activity(self, line, colour=None):
+        """Append one line, coloured only when the level asks for it.
+
+        The format is applied per insertion rather than through appendHtml.
+        HTML leaves its colour as the document's current character format, so
+        every plain line appended afterwards inherits it and the whole panel
+        turns red after the first error.
+
+        Leaving the format empty for a normal line is deliberate: the text then
+        follows the palette, and stays right when the system theme changes.
+        """
+        document = self.activity.document()
+        cursor = QTextCursor(document)
+        cursor.movePosition(QTextCursor.End)
+        if not document.isEmpty():
+            cursor.insertBlock()
+        fmt = QTextCharFormat()
+        if colour:
+            fmt.setForeground(QColor(colour))
+        cursor.insertText(line, fmt)
+        bar = self.activity.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
     def prime(self, entries):
         """Fill the panel from stored history so a fresh window is not blank."""

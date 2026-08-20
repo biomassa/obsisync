@@ -37,7 +37,7 @@ The program runs and syncs a real vault on Linux. Some parts are still new.
 | Linux packages: AppImage, `.deb`, Arch | built by CI |
 | Windows binary and installer | **does not start** — compiles and passes CI, but exits silently on a real machine |
 
-The test suite runs 404 checks on Linux and Windows. The checks replace iCloud with a stub, so they
+The test suite runs 410 checks on Linux and Windows. The checks replace iCloud with a stub, so they
 prove the logic and not the network behavior.
 
 ## Install
@@ -270,7 +270,7 @@ python tests/test_tray.py           # tray, notifications, autostart (20 checks)
 python tests/test_packaging.py      # entry point, build flags, CI (28 checks)
 python tests/test_first_run.py      # first-run reconciliation (20 checks)
 python tests/test_migrate.py        # import from iObsi (18 checks)
-python tests/test_regressions.py    # bugs found in real use (64 checks)
+python tests/test_regressions.py    # bugs found in real use (70 checks)
 ```
 
 ## Design

@@ -45,7 +45,7 @@ daemon is doing.
 ### Added
 
 - **A "recent activity" panel on the dashboard**, showing the last 10 log lines, as iObsi has.
-  Warnings and errors are coloured. DEBUG lines stay on the Logs page. The panel fills from stored
+  Warnings and errors are coloured, and long lines wrap. DEBUG lines stay on the Logs page. The panel fills from stored
   history, so a window that you reopen from the tray is not blank, and "Clear logs" empties it.
 
 ## 0.1.3 — 2026-08-18

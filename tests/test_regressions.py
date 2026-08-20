@@ -304,6 +304,43 @@ check("the window primes the dashboard too",
 check("clearing the logs clears the panel",
       "self.dashboard.activity.clear" in inspect.getsource(_mw))
 
+from PySide6.QtWidgets import QPlainTextEdit, QSizePolicy
+from PySide6.QtCore import Qt as _Qt
+
+# An error used to leave its colour as the document's current format, so every
+# plain line appended afterwards inherited it and the panel turned wholly red.
+dash5 = DashboardPage(ctl)
+dash5.on_log({"timestamp": "2026-08-20 11:10:01", "level": "ERROR",
+              "message": "Still connecting"})
+dash5.on_log({"timestamp": "2026-08-20 11:11:01", "level": "INFO",
+              "message": "Connected to iCloud"})
+
+def _colour_of(widget, block_index):
+    """The foreground colour actually stored on one line of the panel."""
+    block = widget.document().findBlockByNumber(block_index)
+    return block.begin().fragment().charFormat().foreground().color().name()
+
+check("an error line is coloured",
+      _colour_of(dash5.activity, 0).lower() == "#c0392b")
+check("a normal line after an error is not coloured red",
+      _colour_of(dash5.activity, 1).lower() != "#c0392b",
+      _colour_of(dash5.activity, 1))
+dash5.on_log({"timestamp": "2026-08-20 11:12:01", "level": "WARN",
+              "message": "stale scan"})
+dash5.on_log({"timestamp": "2026-08-20 11:13:01", "level": "INFO",
+              "message": "back to normal"})
+check("a normal line after a warning is not coloured amber",
+      _colour_of(dash5.activity, 3).lower() != "#b26a00",
+      _colour_of(dash5.activity, 3))
+
+check("long lines wrap instead of scrolling sideways",
+      dash5.activity.lineWrapMode() == QPlainTextEdit.WidgetWidth)
+check("there is no horizontal scrollbar",
+      dash5.activity.horizontalScrollBarPolicy() == _Qt.ScrollBarAlwaysOff)
+check("the panel does not swallow the spare height of the window",
+      dash5.activity.parentWidget().sizePolicy().verticalPolicy()
+      == QSizePolicy.Maximum)
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)
