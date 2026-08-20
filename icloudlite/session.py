@@ -57,6 +57,18 @@ NON_PERSISTED_SESSION_KEYS = frozenset(
 )
 
 
+# (connect, read) seconds applied to every request that does not set its own.
+#
+# Without this a stalled connection blocks its thread forever: requests passes
+# no timeout by default, so a dead route or a black-holed address never returns
+# and the only recovery is restarting the app. A resident daemon cannot have an
+# unbounded network call.
+#
+# The read timeout is generous because uploads and downloads stream, and it
+# bounds a single socket read rather than the whole transfer.
+DEFAULT_TIMEOUT = (10, 60)
+
+
 class PyiCloudSession(requests.Session):
     """iCloud session."""
 
@@ -262,6 +274,12 @@ class PyiCloudSession(requests.Session):
             json=json,
         )
 
+    @staticmethod
+    def _apply_default_timeout(kwargs) -> None:
+        """Give a request a timeout unless the caller chose one."""
+        if not kwargs.get("timeout"):
+            kwargs["timeout"] = DEFAULT_TIMEOUT
+
     def _request_raw(
         self,
         method,
@@ -270,6 +288,7 @@ class PyiCloudSession(requests.Session):
     ) -> Response:
         """Perform a request and persist cookies/session data without raising."""
 
+        self._apply_default_timeout(kwargs)
         self.logger.debug(
             "%s %s",
             method,
@@ -294,6 +313,7 @@ class PyiCloudSession(requests.Session):
         **kwargs,
     ) -> Response:
         """Request method."""
+        self._apply_default_timeout(kwargs)
         self.logger.debug(
             "%s %s",
             method,

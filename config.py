@@ -16,6 +16,12 @@ DEFAULT_CONFIG = {
     "sync_deletes": True,
     "log_level": "INFO",
     "notifications": True,
+    # Restrict outbound connections to IPv4. A network that advertises IPv6 and
+    # routes none of it makes every connection hang, and requests has no Happy
+    # Eyeballs fallback the way a browser does. iCloud is reachable over IPv4
+    # everywhere, so this costs nothing on a healthy network. Turn it off only
+    # on an IPv6-only network.
+    "force_ipv4": True,
     "ignore_patterns": [
         "*.tmp", "*.swp", "*.part", "*.icloud", ".DS_Store",
         "._*", "~$*", ".trash/", ".sync-tmp-*",

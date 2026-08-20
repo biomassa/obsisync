@@ -37,7 +37,7 @@ The program runs and syncs a real vault on Linux. Some parts are still new.
 | Linux packages: AppImage, `.deb`, Arch | built by CI |
 | Windows binary and installer | **does not start** — compiles and passes CI, but exits silently on a real machine |
 
-The test suite runs 293 checks on Linux and Windows. The checks replace iCloud with a stub, so they
+The test suite runs 404 checks on Linux and Windows. The checks replace iCloud with a stub, so they
 prove the logic and not the network behavior.
 
 ## Install
@@ -116,6 +116,13 @@ Three guards protect your files:
 2. **Bulk deletion.** If more than 10 tracked files disappear from iCloud in one cycle, obsisync
    pauses and asks you first.
 3. **Stale data.** If the remote data comes from a cache, obsisync considers no deletion at all.
+
+### If it hangs at "Connecting to iCloud…"
+
+obsisync connects over IPv4 only, because a router can advertise IPv6 and route none of it. On such
+a network every IPv6 connection stalls, and `requests` tries IPv6 first. A browser survives this
+because it races both families. Turn **Connect to iCloud over IPv4 only** off in the settings if
+you are on an IPv6-only network.
 
 ## Running a second profile
 
@@ -263,7 +270,7 @@ python tests/test_tray.py           # tray, notifications, autostart (20 checks)
 python tests/test_packaging.py      # entry point, build flags, CI (28 checks)
 python tests/test_first_run.py      # first-run reconciliation (20 checks)
 python tests/test_migrate.py        # import from iObsi (18 checks)
-python tests/test_regressions.py    # bugs found in real use (24 checks)
+python tests/test_regressions.py    # bugs found in real use (64 checks)
 ```
 
 ## Design

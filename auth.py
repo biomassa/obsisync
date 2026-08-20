@@ -7,6 +7,7 @@ from icloudlite.exceptions import (
     PyiCloudTrustedDevicePromptException,
 )
 from config import path_for
+from icloudlite.ipv4 import force_ipv4
 from paths import data_dir
 
 SERVICE_NAME = "obsisync"
@@ -115,6 +116,17 @@ def _sms_destination(api):
         return ""
 
 
+def _apply_network_preferences():
+    """Apply the network settings that must be in place before the first request.
+
+    Reading the config here rather than taking it as an argument keeps every
+    caller — the GUI, the CLI and the setup wizard — on the same setting without
+    each of them having to remember to pass it.
+    """
+    import config
+    force_ipv4(config.load().get("force_ipv4", True))
+
+
 def authenticate(email, password=None, interactive=False, twofa_callback=None):
     """Authenticate against iCloud.
 
@@ -126,6 +138,7 @@ def authenticate(email, password=None, interactive=False, twofa_callback=None):
     if not password:
         password = get_password(email)
 
+    _apply_network_preferences()
     _ensure_cookie_dir()
     api = PyiCloudService(email, password, cookie_directory=COOKIE_DIR)
 

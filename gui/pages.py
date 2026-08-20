@@ -12,7 +12,7 @@ import os
 import weakref
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPalette
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
@@ -26,6 +26,14 @@ from state_db import unresolved_conflicts
 
 _LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 _MAX_LOG_BLOCKS = 2000
+
+# How many lines the dashboard's activity panel keeps. It answers "what is it
+# doing right now" at a glance; the Logs page is where history belongs.
+_ACTIVITY_LINES = 10
+
+# Only the levels that mean something went wrong get a colour. Colouring INFO
+# too would make the panel loud and leave nothing to stand out.
+_ACTIVITY_COLOURS = {"WARN": "#b26a00", "ERROR": "#c0392b"}
 
 # How far a secondary label is blended toward the background. 0 is full contrast,
 # 1 is invisible; 0.4 stays comfortably readable in both light and dark themes.
@@ -238,6 +246,25 @@ class DashboardPage(QWidget):
         )
         layout.addWidget(self.ignored)
 
+        activity = QGroupBox("recent activity")
+        activity_layout = QVBoxLayout(activity)
+        activity_layout.setContentsMargins(6, 6, 6, 6)
+        self.activity = QPlainTextEdit()
+        self.activity.setReadOnly(True)
+        # One block per line, so the cap is exactly the number of visible lines
+        # and old entries fall off the top without any bookkeeping here.
+        self.activity.setMaximumBlockCount(_ACTIVITY_LINES)
+        self.activity.setFont(QFont("monospace"))
+        self.activity.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.activity.setFrameShape(QFrame.NoFrame)
+        self.activity.setPlaceholderText("waiting for the first sync…")
+        # Size to the line count instead of stretching: the panel sits under the
+        # alert banners and must not push them off a short window.
+        rows = QFontMetrics(self.activity.font()).lineSpacing() * _ACTIVITY_LINES
+        self.activity.setFixedHeight(rows + 12)
+        activity_layout.addWidget(self.activity)
+        layout.addWidget(activity)
+
         layout.addStretch()
 
         self.sync_now.clicked.connect(sync_engine.trigger_sync)
@@ -319,6 +346,28 @@ class DashboardPage(QWidget):
         last = status.get("last_sync") or "never"
         self.last_sync.setText(f"last sync: {last}")
 
+    def on_log(self, entry):
+        """Append one line. DEBUG is dropped: this panel is a summary, not a log."""
+        if entry.get("level") == "DEBUG":
+            return
+        level = entry.get("level", "")
+        stamp = (entry.get("timestamp") or "")[-8:]        # time, not the date
+        line = f"{stamp}  {level:<5}  {entry.get('message', '')}"
+        colour = _ACTIVITY_COLOURS.get(level)
+        if colour is None:
+            self.activity.appendPlainText(line)
+            return
+        # appendHtml still counts as one block, so the ten-line cap holds. The
+        # text is escaped because a filename may contain < or &.
+        from html import escape
+        self.activity.appendHtml(
+            f'<span style="color:{colour}; white-space:pre">{escape(line)}</span>')
+
+    def prime(self, entries):
+        """Fill the panel from stored history so a fresh window is not blank."""
+        for entry in entries:
+            self.on_log(entry)
+
     def on_pending_deletions(self, paths):
         self.deletions.set_paths(paths)
 
@@ -343,6 +392,8 @@ class LogsPage(QWidget):
     is a second, view-only pass — raising it here hides messages already in the
     buffer without touching what the engine records.
     """
+
+    cleared = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -376,6 +427,7 @@ class LogsPage(QWidget):
             return
         if sync_engine.clear_log_history():
             self.view.clear()
+            self.cleared.emit()
             sync_engine.log("INFO", "Log cleared")
 
     def on_log(self, entry):
@@ -511,6 +563,13 @@ class SettingsPage(QWidget):
         self.notifications = QCheckBox("Show desktop notifications")
         form.addRow("", self.notifications)
 
+        self.force_ipv4 = QCheckBox("Connect to iCloud over IPv4 only")
+        self.force_ipv4.setToolTip(
+            "Some routers advertise IPv6 but route none of it, which makes every "
+            "connection hang. iCloud is reachable over IPv4 everywhere, so leave "
+            "this on unless you are on an IPv6-only network.")
+        form.addRow("", self.force_ipv4)
+
         layout.addLayout(form)
 
         layout.addWidget(QLabel("Ignore patterns (one per line)"))
@@ -548,6 +607,7 @@ class SettingsPage(QWidget):
         self.log_level.setCurrentText(cfg.get("log_level", "INFO"))
         self.sync_deletes.setChecked(bool(cfg.get("sync_deletes", True)))
         self.notifications.setChecked(bool(cfg.get("notifications", True)))
+        self.force_ipv4.setChecked(bool(cfg.get("force_ipv4", True)))
         self.ignore.setPlainText("\n".join(cfg.get("ignore_patterns", [])))
         from gui import autostart as _autostart
         if _autostart.supported():
@@ -576,6 +636,7 @@ class SettingsPage(QWidget):
         cfg["log_level"] = self.log_level.currentText()
         cfg["sync_deletes"] = self.sync_deletes.isChecked()
         cfg["notifications"] = self.notifications.isChecked()
+        cfg["force_ipv4"] = self.force_ipv4.isChecked()
         cfg["ignore_patterns"] = [
             line.strip() for line in self.ignore.toPlainText().splitlines() if line.strip()
         ]
@@ -587,5 +648,9 @@ class SettingsPage(QWidget):
             except Exception as exc:
                 QMessageBox.warning(self, "Could not change start-on-login", str(exc))
         sync_engine.set_log_level(cfg["log_level"])
+        # Takes effect on the next connection, which is what the user expects
+        # after changing it: no restart, no reconnect.
+        from icloudlite.ipv4 import force_ipv4 as _force_ipv4
+        _force_ipv4(cfg["force_ipv4"])
         sync_engine.log("INFO", "Settings saved")
         self.saved.emit()

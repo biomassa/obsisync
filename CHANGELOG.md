@@ -20,6 +20,34 @@ nowhere to print. Steps in order of cost:
 4. Windows Event Viewer, under Application, records a faulting module for a crash before Python
    starts.
 
+## 0.1.4 — 2026-08-20
+
+obsisync no longer hangs on a network whose IPv6 does not work, and the dashboard shows what the
+daemon is doing.
+
+### Fixed
+
+- **A broken IPv6 route made obsisync hang at "Connecting to iCloud…" forever.** A router can
+  advertise IPv6 and route none of it: the host takes a global address and installs a default
+  route, and every connection over that route then stalls. `requests` walks the addresses that
+  `getaddrinfo` returns, in order, and that order puts IPv6 first. A browser survives this because
+  it races both families (Happy Eyeballs, RFC 8305). `requests` does not.
+
+  obsisync now connects over IPv4 only. iCloud is reachable over IPv4 everywhere, so this costs
+  nothing on a healthy network. The **Connect to iCloud over IPv4 only** setting turns it off for
+  an IPv6-only network.
+
+- **The vendored iCloud client passed no request timeout, so a stalled connection blocked its
+  thread forever.** This is what turned the condition above from a delay into a wedge: the only
+  recovery was restarting the app. Every request now has a 10-second connect timeout and a
+  60-second read timeout unless the caller sets its own.
+
+### Added
+
+- **A "recent activity" panel on the dashboard**, showing the last 10 log lines, as iObsi has.
+  Warnings and errors are coloured. DEBUG lines stay on the Logs page. The panel fills from stored
+  history, so a window that you reopen from the tray is not blank, and "Clear logs" empties it.
+
 ## 0.1.3 — 2026-08-18
 
 Signing in with an Apple ID now works. Earlier versions could not complete a first-time sign-in, so

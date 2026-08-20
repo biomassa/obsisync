@@ -130,16 +130,22 @@ class MainWindow(QMainWindow):
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.bridge.logReceived.connect(self.logs.on_log)
+        self.bridge.logReceived.connect(self.dashboard.on_log)
         self.bridge.statusChanged.connect(self.dashboard.on_status)
         self.bridge.statusChanged.connect(self._on_status)
         self.bridge.pendingDeletionsChanged.connect(self.dashboard.on_pending_deletions)
         self.bridge.pendingIgnoredChanged.connect(self.dashboard.on_pending_ignored)
         self.bridge.pendingFirstRunChanged.connect(self.dashboard.on_pending_first_run)
         self.settings.saved.connect(self.conflicts.refresh)
+        self.logs.cleared.connect(self.dashboard.activity.clear)
 
         # Read the persisted log, not the in-memory ring: the ring is empty at
         # startup, which made the view look as though nothing had ever happened.
-        self.logs.prime(sync_engine.get_log_history(limit=500))
+        history = sync_engine.get_log_history(limit=500)
+        self.logs.prime(history)
+        # The panel keeps the last few lines, so priming it with the tail is
+        # enough and avoids re-rendering the whole history into a 10-line box.
+        self.dashboard.prime(history[-50:])
 
         # Fill the tiles now rather than waiting for the next poll, which only
         # fires on a change and would otherwise leave a rebuilt window blank.

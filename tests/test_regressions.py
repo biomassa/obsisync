@@ -230,6 +230,80 @@ remaining = [e for e in sync_engine.get_log_history(50)
              if e["message"] == "persisted entry"]
 check("clearing removes the persisted entries", not remaining, str(len(remaining)))
 
+print("\n== a black-holed IPv6 route cannot hang the app ==")
+# A router can advertise IPv6 and route none of it. requests has no Happy
+# Eyeballs, so it blocks on the first (IPv6) address for ever, and the vendored
+# client passed no timeout — the connect thread wedged with no way back.
+import socket
+import urllib3.util.connection as _u3
+from icloudlite.ipv4 import force_ipv4, ipv4_forced
+from icloudlite.session import DEFAULT_TIMEOUT, PyiCloudSession
+
+default_family = _u3.allowed_gai_family
+force_ipv4(True)
+check("forcing IPv4 makes urllib3 ask for AF_INET only",
+      _u3.allowed_gai_family() == socket.AF_INET)
+check("the state is reportable", ipv4_forced())
+force_ipv4(False)
+check("it can be turned off again for an IPv6-only network",
+      _u3.allowed_gai_family() is default_family() or not ipv4_forced())
+force_ipv4(True)
+
+connect_timeout, read_timeout = DEFAULT_TIMEOUT
+check("a connect timeout is set", 0 < connect_timeout <= 30, str(connect_timeout))
+check("a read timeout is set and is longer than the connect timeout",
+      read_timeout > connect_timeout, str(read_timeout))
+
+kwargs = {"timeout": None}
+PyiCloudSession._apply_default_timeout(kwargs)
+check("a request without a timeout is given the default",
+      kwargs["timeout"] == DEFAULT_TIMEOUT)
+kwargs = {"timeout": 5}
+PyiCloudSession._apply_default_timeout(kwargs)
+check("a caller's own timeout is left alone", kwargs["timeout"] == 5)
+
+import auth
+check("authenticate applies the setting before the first request",
+      "_apply_network_preferences" in inspect.getsource(auth.authenticate))
+src_order = inspect.getsource(auth.authenticate)
+check("it is applied before the service is constructed",
+      src_order.index("_apply_network_preferences")
+      < src_order.index("PyiCloudService("))
+import config
+check("the setting has a default and defaults to on",
+      config.DEFAULT_CONFIG.get("force_ipv4") is True)
+
+print("\n== the dashboard shows recent activity ==")
+dash3 = DashboardPage(ctl)
+check("the panel exists", hasattr(dash3, "activity"))
+check("it is read-only", dash3.activity.isReadOnly())
+check("it keeps ten lines", dash3.activity.maximumBlockCount() == 10)
+dash3.on_log({"timestamp": "2026-08-20 10:35:54", "level": "INFO",
+              "message": "Uploaded note.md"})
+text = dash3.activity.toPlainText()
+check("an entry appears", "Uploaded note.md" in text, text)
+check("the date is trimmed to the time", "2026-08-20" not in text, text)
+dash3.on_log({"timestamp": "2026-08-20 10:35:55", "level": "DEBUG",
+              "message": "lifecycle chatter"})
+check("DEBUG is left to the Logs page",
+      "lifecycle chatter" not in dash3.activity.toPlainText())
+for i in range(20):
+    dash3.on_log({"timestamp": "2026-08-20 10:36:00", "level": "INFO",
+                  "message": f"entry {i}"})
+lines = [ln for ln in dash3.activity.toPlainText().splitlines() if ln.strip()]
+check("it never grows past ten lines", len(lines) <= 10, str(len(lines)))
+check("the oldest entries fall off the top", "Uploaded note.md" not in
+      dash3.activity.toPlainText())
+dash4 = DashboardPage(ctl)
+dash4.prime([{"timestamp": "2026-08-20 10:00:00", "level": "INFO",
+              "message": "primed"}])
+check("a rebuilt window is primed from history",
+      "primed" in dash4.activity.toPlainText())
+check("the window primes the dashboard too",
+      "self.dashboard.prime" in inspect.getsource(_mw))
+check("clearing the logs clears the panel",
+      "self.dashboard.activity.clear" in inspect.getsource(_mw))
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)
