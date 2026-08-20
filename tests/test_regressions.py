@@ -397,6 +397,63 @@ check("a long editing session is still rate limited",
       _watcher._MIN_INTERVAL_SECONDS >= 30, str(_watcher._MIN_INTERVAL_SECONDS))
 _se._sync_trigger.clear()
 
+print("\n== an edit during a cycle is deferred, not dropped ==")
+# All three guards used to return, discarding the change. A forced remote scan
+# takes far longer than the 30s floor, so an edit made while one was running was
+# forgotten until the next poll — up to poll_interval later.
+handler.cancel_pending()
+_quiet, _floor, _retry = (_watcher._QUIET_PERIOD_SECONDS,
+                          _watcher._MIN_INTERVAL_SECONDS, _watcher._RETRY_SECONDS)
+_watcher._QUIET_PERIOD_SECONDS, _watcher._MIN_INTERVAL_SECONDS = 0.2, 3
+_watcher._RETRY_SECONDS = 0.2
+try:
+    deferred = _watcher.VaultEventHandler(VAULT, [])
+    _se._watchdog_suppress_until = 0.0
+    _se._sync_trigger.clear()
+    _se._sync_running.set()
+    deferred.on_modified(FileModifiedEvent(f"{VAULT}/Daily/note.md"))
+    _time.sleep(1.0)
+    check("nothing fires while a cycle is running", not _se._sync_trigger.is_set())
+    _se._sync_running.clear()
+    _time.sleep(0.8)
+    check("the edit fires once the cycle ends", _se._sync_trigger.is_set())
+
+    _se._sync_trigger.clear()
+    deferred._last_trigger = _time.time()
+    deferred.on_modified(FileModifiedEvent(f"{VAULT}/Daily/note.md"))
+    _time.sleep(1.0)
+    check("nothing fires inside the minimum interval",
+          not _se._sync_trigger.is_set())
+    _time.sleep(2.6)
+    check("the edit fires once the interval expires", _se._sync_trigger.is_set())
+
+    _se._sync_trigger.clear()
+    deferred._last_trigger = 0.0
+    _se._watchdog_suppress_until = _time.time() + 1.0
+    deferred.on_modified(FileModifiedEvent(f"{VAULT}/Daily/note.md"))
+    _time.sleep(0.6)
+    check("nothing fires inside the post-cycle window",
+          not _se._sync_trigger.is_set())
+    _time.sleep(1.2)
+    check("the edit fires once that window expires", _se._sync_trigger.is_set())
+
+    deferred.cancel_pending()
+    _se._sync_trigger.clear()
+    deferred.on_modified(FileModifiedEvent(f"{VAULT}/Daily/note.md"))
+    deferred.cancel_pending()
+    _time.sleep(0.6)
+    check("a stopped watcher fires nothing", not _se._sync_trigger.is_set())
+finally:
+    (_watcher._QUIET_PERIOD_SECONDS, _watcher._MIN_INTERVAL_SECONDS,
+     _watcher._RETRY_SECONDS) = _quiet, _floor, _retry
+    _se._watchdog_suppress_until = 0.0
+    _se._sync_running.clear()
+    _se._sync_trigger.clear()
+
+import inspect as _inspect
+check("the watcher cancels its timer when it stops",
+      "cancel_pending" in _inspect.getsource(_watcher.VaultWatcher.stop))
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)

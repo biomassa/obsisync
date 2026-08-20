@@ -36,6 +36,11 @@ _QUIET_PERIOD_SECONDS = 3.0
 # The floor between two watcher-driven cycles.
 _MIN_INTERVAL_SECONDS = 30
 
+# How often to re-check while a cycle is running. A cycle has no predictable
+# length — a cached remote listing makes it instant, a forced refresh takes
+# roughly a second per thirty files — so there is nothing better to wait on.
+_RETRY_SECONDS = 1.0
+
 
 class VaultEventHandler(FileSystemEventHandler):
     def __init__(self, vault_path=None, ignore_patterns=None):
@@ -63,23 +68,48 @@ class VaultEventHandler(FileSystemEventHandler):
         return should_ignore(to_key(rel), self._ignore_patterns)
 
     def _debounce_trigger(self):
+        self._schedule(_QUIET_PERIOD_SECONDS)
+
+    def _schedule(self, delay):
+        """Arm the single pending timer, replacing whatever was on it."""
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
-            self._timer = threading.Timer(_QUIET_PERIOD_SECONDS, self._fire)
+            self._timer = threading.Timer(max(delay, 0.05), self._fire)
+            self._timer.daemon = True
             self._timer.start()
 
-    def _fire(self):
+    def _blocked_until(self, now):
+        """When the next trigger may fire, or None if it may fire now."""
         if _sync_running.is_set():
-            return
-        if time.time() < sync_engine._watchdog_suppress_until:
-            return
-        now = time.time()
+            # A cycle gives no notice of when it will end, so re-check soon.
+            return now + _RETRY_SECONDS
+        if now < sync_engine._watchdog_suppress_until:
+            return sync_engine._watchdog_suppress_until
         if now - self._last_trigger < _MIN_INTERVAL_SECONDS:
+            return self._last_trigger + _MIN_INTERVAL_SECONDS
+        return None
+
+    def _fire(self):
+        # A blocked change is deferred, never dropped. Returning here instead
+        # discarded it: an edit made while a cycle was running — and a forced
+        # remote scan takes far longer than the interval below — was forgotten
+        # until the next poll, up to poll_interval later.
+        now = time.time()
+        blocked_until = self._blocked_until(now)
+        if blocked_until is not None:
+            self._schedule(blocked_until - now)
             return
         self._last_trigger = now
         log("DEBUG", "Local change detected — triggering sync")
         _sync_trigger.set()
+
+    def cancel_pending(self):
+        """Drop any armed timer, so a stopped watcher fires nothing."""
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
 
     def _handle(self, event, *paths):
         if event.is_directory:
@@ -122,6 +152,7 @@ class VaultWatcher:
         log("INFO", f"Watchdog monitoring: {self._vault_path}")
 
     def stop(self):
+        self._handler.cancel_pending()
         self._observer.stop()
         self._observer.join()
         log("INFO", "Watchdog stopped")

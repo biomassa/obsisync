@@ -48,6 +48,13 @@ daemon is doing.
   seconds on a cycle with nothing to do — and the real note edit that followed was dropped and left
   to the next poll. The watcher now filters events through the same patterns the scans use.
 
+- **A local edit made during a sync was dropped.** The watcher's three guards — a cycle in
+  progress, the post-cycle echo window, the minimum interval — each discarded the change instead of
+  deferring it. A forced remote scan of an 800-file vault takes about 25 seconds, comfortably
+  longer than the 30-second interval it was measured against, so editing a note while one ran meant
+  waiting for the next poll. A blocked change is now rescheduled and fires as soon as the block
+  lifts.
+
 ### Changed
 
 - **The watcher waits 3 seconds after writing stops** instead of 0.3, so a note is not uploaded

@@ -37,7 +37,7 @@ The program runs and syncs a real vault on Linux. Some parts are still new.
 | Linux packages: AppImage, `.deb`, Arch | built by CI |
 | Windows binary and installer | **does not start** — compiles and passes CI, but exits silently on a real machine |
 
-The test suite runs 421 checks on Linux and Windows. The checks replace iCloud with a stub, so they
+The test suite runs 429 checks on Linux and Windows. The checks replace iCloud with a stub, so they
 prove the logic and not the network behavior.
 
 ## Install
@@ -107,7 +107,8 @@ obsisync does not guess. It asks, and it offers three answers:
 The daemon watches your vault with `watchdog`, so it sees a local edit immediately. Two limits sit
 on that. A change syncs 3 seconds after writing stops, so a note is never uploaded mid-save, and a
 watcher-driven sync runs at most once every 30 seconds, so a long editing session uploads about
-twice a minute instead of continuously. Ignored files do not count as changes at all.
+twice a minute instead of continuously. Ignored files do not count as changes at all. A change that
+arrives while a sync is already running waits for it to finish rather than being lost.
 
 It also scans iCloud Drive every 120 seconds, because iCloud Drive has no webhooks and polling is
 the only option. A note that you add on another device therefore appears within one poll interval. Change
@@ -274,7 +275,7 @@ python tests/test_tray.py           # tray, notifications, autostart (20 checks)
 python tests/test_packaging.py      # entry point, build flags, CI (28 checks)
 python tests/test_first_run.py      # first-run reconciliation (20 checks)
 python tests/test_migrate.py        # import from iObsi (18 checks)
-python tests/test_regressions.py    # bugs found in real use (81 checks)
+python tests/test_regressions.py    # bugs found in real use (89 checks)
 ```
 
 ## Design
