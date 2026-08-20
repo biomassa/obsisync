@@ -62,8 +62,14 @@ jobs:
           python tests/test_profile.py
           python tests/test_2fa_flow.py
 
+  # The three build jobs run on a tag only. Nuitka compiles the program and Qt
+  # to C, which takes 8-15 minutes per platform, and a branch push and its tag
+  # are two separate events — so building on both compiled every release twice.
+  # The tests still run on every push and pull request, which is what catches a
+  # regression; a build that is never released proves little on its own.
   build-linux:
     name: linux binary
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: ubuntu-22.04     # oldest supported glibc = widest compatibility
     steps:
@@ -190,6 +196,7 @@ jobs:
 
   build-arch:
     name: arch package
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build-linux
     runs-on: ubuntu-latest
     container: archlinux:base-devel
@@ -216,6 +223,7 @@ jobs:
 
   build-windows:
     name: windows binary
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: test
     runs-on: windows-latest
     steps:

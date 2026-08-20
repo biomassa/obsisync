@@ -141,6 +141,15 @@ try:
 
     check("built on old glibc for wide compatibility",
           jobs["build-linux"]["runs-on"] == "ubuntu-22.04", jobs["build-linux"]["runs-on"])
+
+    # A branch push and its tag are two separate events, so building on both
+    # compiled every release twice — 8-15 minutes per platform, wasted.
+    TAG_ONLY = "startsWith(github.ref, 'refs/tags/v')"
+    for job in ("build-linux", "build-arch", "build-windows", "release"):
+        check(f"{job} runs on a tag only", jobs[job].get("if") == TAG_ONLY,
+              str(jobs[job].get("if")))
+    check("the tests still run on every push and pull request",
+          "if" not in jobs["test"])
 except ImportError:
     check("pyyaml available to validate the workflow", False, "pip install pyyaml")
 
