@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 config.json
 session/
 sync_state.db
@@ -9,19 +10,14 @@ nohup.out
 
 # build output
 build/
+build-standalone/
 dist/
 *.build/
 *.dist/
 *.onefile-build/
 *.spec
+*.lock
 
 # local agent notes
 AGENTS.md
 CLAUDE.md
-build_spike*.log
-spike/
-docs/screenshots/
-build-standalone/
-build_*.log
-dist/
-*.lock

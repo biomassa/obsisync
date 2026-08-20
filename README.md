@@ -4,6 +4,7 @@
 >
 > The Windows build does not start. It compiles, and it passes the tests and the smoke test in CI,
 > but on a real machine it exits without a window and without a message. Use the Linux build.
+> [Debugging notes](docs/windows-build.md) record what to try first.
 
 A native desktop application that keeps an Obsidian vault in sync between iCloud Drive and Linux
 or Windows.
@@ -75,6 +76,8 @@ verification code, either to your trusted devices or by SMS, and the dialog name
 
 obsisync stores the password in the system credential store. It never writes the password to a
 file.
+
+A hardware security key does not work as the second factor. A trusted device or an SMS does.
 
 ### If you already use iObsi
 
@@ -243,7 +246,6 @@ You do not have to compile the program to use it:
 ```bash
 python -m gui.app                       # the GUI
 python sync.py --help                   # the headless CLI
-python spike/demo.py                    # UI preview, sample data, no iCloud
 ```
 
 This needs no C compiler, and it uses about 20 MB less memory than the compiled binary, because a
@@ -253,7 +255,7 @@ suits development more than daily use.
 ### Notes on the build
 
 `build.py` holds the Nuitka options, so a local build and a CI release cannot differ. CI runs the
-tests on Linux and Windows for every push and pull request. A `v*` tag additionally builds the
+tests on Linux and Windows for every push and pull request. A `v*` tag also builds the
 binary, an AppImage, a `.deb`, an Arch package and a Windows NSIS installer, then publishes a
 GitHub Release. Compiling takes 8 to 15 minutes per platform, so it is not worth doing for a commit
 that nobody will install.
