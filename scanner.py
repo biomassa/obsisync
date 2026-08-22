@@ -53,14 +53,27 @@ def scan_local(vault_path, extra_ignore=None):
     return result
 
 
-def _walk_sync(node, prefix="", extra_ignore=None):
+class RemoteScanIncomplete(RuntimeError):
+    """A folder listing failed, so the remote tree is missing whole subtrees.
+
+    This must never be confused with "those files are gone". A listing fails for
+    ordinary reasons — a dropped connection, a request timeout, a laptop waking
+    with no network yet — and the result looks exactly like a deletion: entire
+    folders absent from the scan. Acting on it deletes real files.
+    """
+
+
+def _walk_sync(node, prefix="", extra_ignore=None, failures=None):
     entries = {}
     children = getattr(node, "_children", None)
     if children is None:
         try:
             node.get_children()
             children = node._children or []
-        except Exception:
+        except Exception as exc:
+            # Returning an empty dict here is what made a failed listing
+            # indistinguishable from an emptied folder.
+            _record(failures, prefix or getattr(node, "name", "?"), exc)
             return entries
     for child in children or []:
         name = child.name
@@ -69,7 +82,7 @@ def _walk_sync(node, prefix="", extra_ignore=None):
             continue
         try:
             if child.type in ("folder", "app_library"):
-                entries.update(_walk_sync(child, rel, extra_ignore))
+                entries.update(_walk_sync(child, rel, extra_ignore, failures))
             else:
                 entries[rel] = {
                     "path": rel,
@@ -81,9 +94,16 @@ def _walk_sync(node, prefix="", extra_ignore=None):
                     "size": child.size or 0,
                     "etag": getattr(child, "etag", None) or "",
                 }
-        except Exception:
+        except Exception as exc:
+            _record(failures, rel, exc)
             continue
     return entries
+
+
+def _record(failures, where, exc):
+    """Note a subtree we could not read. None means the caller wants no record."""
+    if failures is not None:
+        failures.append(f"{where} ({type(exc).__name__})")
 
 
 last_force_refresh = 0.0
@@ -113,12 +133,13 @@ def set_cache_age(poll_interval):
 _EXPLORE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
-def _explore_one(node, name, extra_ignore=None):
+def _explore_one(node, name, extra_ignore=None, failures=None):
     try:
         if getattr(node, "_children", None) is None:
             node.get_children()
-        return _walk_sync(node, name, extra_ignore)
-    except Exception:
+        return _walk_sync(node, name, extra_ignore, failures)
+    except Exception as exc:
+        _record(failures, name, exc)
         return {}
 
 
@@ -166,13 +187,15 @@ def scan_remote(vault_node, force=False, extra_ignore=None):
 
     entries = {}
     futs = []
+    failures = []
     for child in vault_node._children or []:
         name = child.name
         if should_ignore(name, extra_ignore):
             continue
         try:
             if child.type in ("folder", "app_library"):
-                futs.append(_EXPLORE_POOL.submit(_explore_one, child, name, extra_ignore))
+                futs.append(
+                    _EXPLORE_POOL.submit(_explore_one, child, name, extra_ignore, failures))
             else:
                 entries[name] = {
                     "path": name,
@@ -184,12 +207,29 @@ def scan_remote(vault_node, force=False, extra_ignore=None):
                     "size": child.size or 0,
                     "etag": getattr(child, "etag", None) or "",
                 }
-        except Exception:
+        except Exception as exc:
+            _record(failures, name, exc)
             continue
 
-    for fut in concurrent.futures.as_completed(futs, timeout=180):
-        try:
-            entries.update(fut.result())
-        except Exception:
-            continue
+    try:
+        for fut in concurrent.futures.as_completed(futs, timeout=180):
+            try:
+                entries.update(fut.result())
+            except Exception as exc:
+                _record(failures, "?", exc)
+    except concurrent.futures.TimeoutError as exc:
+        _record(failures, "(folders still listing after 180s)", exc)
+
+    if failures:
+        # Refuse to return a tree we know is short. Every caller compares this
+        # against the tracked state, and a missing subtree is indistinguishable
+        # from a deleted one — which is how a dropped connection turned into 13
+        # files queued for deletion on 2026-08-22.
+        shown = ", ".join(sorted(failures)[:5])
+        if len(failures) > 5:
+            shown += f", and {len(failures) - 5} more"
+        _log("ERROR",
+             f"Remote scan incomplete — {len(failures)} listing(s) failed: {shown}")
+        raise RemoteScanIncomplete(f"{len(failures)} folder listing(s) failed")
+
     return entries, fresh

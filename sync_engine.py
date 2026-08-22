@@ -18,7 +18,10 @@ from state_db import (
     get_meta,
     set_meta,
 )
-from scanner import scan_local, scan_remote, hash_file_head, invalidate_remote_cache
+from scanner import (
+    RemoteScanIncomplete, scan_local, scan_remote, hash_file_head,
+    invalidate_remote_cache,
+)
 from conflict import resolve as resolve_conflict
 from filters import should_ignore
 
@@ -160,7 +163,17 @@ def get_pending_deletions():
 
 def confirm_pending_deletions(api, vault_node, cfg):
     log("INFO", "Re-scanning remote to verify pending deletions...")
-    remote_files, _ = scan_remote(vault_node, force=True, extra_ignore=cfg.get("ignore_patterns", []))
+    try:
+        remote_files, _ = scan_remote(
+            vault_node, force=True, extra_ignore=cfg.get("ignore_patterns", []))
+    except RemoteScanIncomplete as exc:
+        # This scan is the last check before files are deleted for real. An
+        # incomplete one would confirm exactly the phantom deletions it is
+        # supposed to disprove.
+        log("ERROR",
+            f"Not confirming deletions: the remote scan was incomplete ({exc}). "
+            "Nothing has been deleted. Try again when the connection is stable.")
+        return
     local_path = cfg["local_path"]
     with _pending_deletions_lock:
         pending = list(_pending_remote_deletions)
@@ -342,7 +355,13 @@ def reconcile_first_run(api, vault_node, cfg, mode):
     local_path = cfg["local_path"]
     extra_ignore = cfg.get("ignore_patterns", [])
     local_files = scan_local(local_path, extra_ignore)
-    remote_files, _ = scan_remote(vault_node, force=True, extra_ignore=extra_ignore)
+    try:
+        remote_files, _ = scan_remote(vault_node, force=True, extra_ignore=extra_ignore)
+    except RemoteScanIncomplete as exc:
+        log("ERROR",
+            f"First-run reconciliation aborted: the remote scan was incomplete ({exc}). "
+            "Nothing has been changed. Try again when the connection is stable.")
+        return
 
     both = sorted(set(local_files) & set(remote_files))
     adopted = downloaded = uploaded = differing = errors = 0
@@ -450,7 +469,13 @@ def _save_stats(**kw):
 
 def bootstrap_vault(api, vault_node, local_path, extra_ignore=None):
     log("INFO", "Bootstrapping vault — downloading all files from iCloud Drive...")
-    remote_files = scan_remote(vault_node, extra_ignore=extra_ignore)
+    try:
+        remote_files = scan_remote(vault_node, extra_ignore=extra_ignore)
+    except RemoteScanIncomplete as exc:
+        log("ERROR",
+            f"Bootstrap aborted: the remote scan was incomplete ({exc}). "
+            "Downloading a partial vault would look like a vault with files missing.")
+        return
     if isinstance(remote_files, tuple):
         remote_files = remote_files[0]
     total = len(remote_files)
@@ -620,7 +645,16 @@ def _run_sync_cycle(api, vault_node, cfg, force=False):
         log("INFO", f"Re-auth attempt failed: {e}")
 
     local_files = scan_local(local_path, extra_ignore)
-    remote_files, remote_fresh = scan_remote(vault_node, force=force, extra_ignore=extra_ignore)
+    try:
+        remote_files, remote_fresh = scan_remote(
+            vault_node, force=force, extra_ignore=extra_ignore)
+    except RemoteScanIncomplete as exc:
+        # Abort rather than sync against a short tree. Beyond the deletion
+        # guards, a file missing from the scan also looks local-only, so the
+        # cycle would upload a stale local copy over a newer remote one.
+        log("ERROR",
+            f"Remote scan incomplete ({exc}) — aborting cycle to prevent data loss")
+        return
 
     # ── First-run guard ──
     # An empty database against a vault that already exists on both sides means

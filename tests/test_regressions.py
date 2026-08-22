@@ -454,6 +454,77 @@ import inspect as _inspect
 check("the watcher cancels its timer when it stops",
       "cancel_pending" in _inspect.getsource(_watcher.VaultWatcher.stop))
 
+print("\n== a failed folder listing is never read as a deletion ==")
+# 2026-08-22: a laptop woke with no network, folder listings raised, and every
+# handler swallowed the exception and returned {} — so whole subtrees vanished
+# from the scan while it still reported itself fresh. 13 real files were queued
+# for deletion. A listing that fails must poison the scan, not shrink it.
+import datetime as _dt
+import scanner as _scanner
+from scanner import RemoteScanIncomplete
+import sync_engine as _se2
+
+class _Node:
+    def __init__(self, name, type="folder", kids=None, fail=False):
+        self.name, self.type, self.fail = name, type, fail
+        self._kids = kids or []
+        self._children = None
+        self.date_modified = _dt.datetime.now()
+        self.size = 10
+        self.etag = "e"
+    def get_children(self, force=False):
+        if self.fail:
+            raise ConnectionError("network went away")
+        self._children = self._kids
+        return self._children
+
+def _file(name):
+    return _Node(name, "file")
+
+def _tree(fail=False):
+    vault = _Node("vault", kids=[
+        _Node("Daily", kids=[_file("a.md"), _file("b.md")]),
+        _Node("Notion Archives",
+              kids=[_Node("PhD Research", kids=[_file("x.md")], fail=fail)]),
+    ])
+    vault.get_children()
+    return vault
+
+_scanner.last_force_refresh = 0.0
+entries, fresh = _scanner.scan_remote(_tree(False), force=True)
+check("a healthy tree still scans", len(entries) == 3, str(sorted(entries)))
+check("and reports itself fresh", fresh)
+
+_scanner.last_force_refresh = 0.0
+raised = False
+try:
+    _scanner.scan_remote(_tree(True), force=True)
+except RemoteScanIncomplete:
+    raised = True
+check("a failed folder listing raises instead of returning a short tree", raised)
+
+# The whole point: the missing subtree must never reach the deletion logic.
+_scanner.last_force_refresh = 0.0
+leaked = None
+try:
+    leaked, _ = _scanner.scan_remote(_tree(True), force=True)
+except RemoteScanIncomplete:
+    pass
+check("no short tree is ever handed back", leaked is None)
+
+check("the failure names the folder that failed",
+      "_record" in inspect.getsource(_scanner._walk_sync))
+
+src_engine = inspect.getsource(_se2)
+for fn in ("confirm_pending_deletions", "reconcile_first_run",
+           "_run_sync_cycle", "bootstrap_vault"):
+    body = inspect.getsource(getattr(_se2, fn))
+    check(f"{fn} refuses an incomplete scan", "RemoteScanIncomplete" in body)
+
+# confirm_pending_deletions is the one that actually unlinks files.
+check("confirming deletions on an incomplete scan deletes nothing",
+      "Nothing has been deleted" in inspect.getsource(_se2.confirm_pending_deletions))
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)

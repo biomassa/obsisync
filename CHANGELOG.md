@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed folder listing was read as a deletion — a data-loss bug.** Every handler in the remote
+  scan caught its exception and returned an empty result, so a folder that could not be listed was
+  indistinguishable from a folder that had been emptied. The scan still reported itself fresh, and
+  the missing subtrees went to the deletion logic as real deletions. On 2026-08-22 a laptop woke
+  with no network, two subtrees failed to list, and 13 existing files were queued for deletion. The
+  bulk-deletion guard caught it and paused, so nothing was lost, but the guard was the last line of
+  defence rather than the first.
+
+  A listing failure now poisons the scan instead of shrinking it: `scan_remote` names the folders
+  that failed and raises `RemoteScanIncomplete`, and all four callers abort rather than act on a
+  short tree. This matters most in `confirm_pending_deletions`, whose whole job is to re-verify
+  deletions immediately before executing them — an incomplete scan there would have confirmed the
+  very phantom deletions it exists to disprove.
+
+  A request timeout was added in 0.1.4 so no network call could hang forever. That turned a hang
+  into a raised exception, which these handlers then swallowed, so the failure mode became far more
+  reachable than before.
+
 ### Changed
 
 - CI builds on a tag only. A branch push and its tag are two separate push events, and both matched
