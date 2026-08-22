@@ -42,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The bulk-deletion guard now asks after 3 missing files, not 10.** A wrong deletion costs a file;
+  a wrong prompt costs a click, and the prompt clears itself when a later complete scan shows the
+  files present. Ten also sat awkwardly against the truncated-scan guard, which only catches a
+  shortfall below 90%, so a scan that lost four to ten files fell through both.
+
+- **The deletion prompt shows the whole list, readably.** It was capped at about five rows and
+  elided long paths on the right with no scrollbar, so the part identifying the file was the part
+  that disappeared — in the list you read before agreeing to delete files. It now grows to fit, up
+  to 14 rows, never elides, scrolls sideways when a path is genuinely too wide, and carries the full
+  path as a tooltip.
+
+- **The tray arrows stay red while a deletion decision is outstanding**, including across a restart.
+  The state is derived from the persisted set, and the GUI restores that at startup rather than
+  waiting for iCloud to connect — the daemon starts only after authentication, which can be slow or
+  fail, and the decision is outstanding either way.
+
 - CI builds on a tag only. A branch push and its tag are two separate push events, and both matched
   the workflow trigger, so every release compiled twice — 8 to 15 minutes per platform, on Linux and
   Windows. The tests still run on every push and pull request.

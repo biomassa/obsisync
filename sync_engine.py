@@ -36,7 +36,15 @@ _sync_force_refresh = threading.Event()
 _shutdown_event = threading.Event()
 _watchdog_suppress_until = 0.0
 _pending_remote_deletions = []
-_DELETION_THRESHOLD = 10
+# More than this many tracked files missing from one fresh scan is treated as
+# suspicious and parked for a decision rather than propagated.
+#
+# Three, not ten. A wrong deletion costs a file; a wrong prompt costs a click,
+# and the prompt now clears itself when a later complete scan shows the files
+# present. The asymmetry says to ask early. Ten also sat awkwardly against the
+# truncated-scan guard, which only catches a shortfall below 90% — so a scan
+# that lost four to ten files fell through both.
+_DELETION_THRESHOLD = 3
 _pending_deletions_lock = threading.Lock()
 
 # Tracked files that a config ignore_patterns entry has started matching. Both scans
@@ -181,11 +189,18 @@ def _clear_pending_deletions():
 
 
 def restore_pending_deletions():
-    """Reinstate an unanswered deletion prompt after a restart."""
+    """Reinstate an unanswered deletion prompt after a restart.
+
+    Safe to call more than once: the GUI calls it at startup so the red tray and
+    the banner appear before iCloud is even contacted, and the daemon calls it
+    again when it starts.
+    """
     global _paused_by_deletions
     pending = _load_pending_deletions()
     if not pending:
         return []
+    if get_pending_deletions() == pending:
+        return pending          # already restored; do not log it twice
     with _pending_deletions_lock:
         _pending_remote_deletions[:] = pending
     _paused_by_deletions = True

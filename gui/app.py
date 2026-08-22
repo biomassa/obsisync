@@ -53,6 +53,14 @@ class Application:
         self.cfg = config.load()
         sync_engine.set_log_level(self.cfg.get("log_level", "INFO"))
 
+        # An outstanding deletion decision must be visible from the moment the
+        # app opens — red tray, banner on the dashboard — not only once iCloud
+        # connects. The daemon restores it too, but the daemon starts after
+        # authentication, which can take a while or fail outright.
+        from state_db import init as db_init
+        db_init()
+        sync_engine.restore_pending_deletions()
+
         # These outlive the window: the tray needs status while the window is
         # gone, and the iCloud session must not be re-established on every open.
         self.bridge = EngineBridge()

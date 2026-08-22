@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
     QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QListWidgetItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 import config
@@ -28,6 +28,11 @@ from state_db import unresolved_conflicts
 
 _LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 _MAX_LOG_BLOCKS = 2000
+
+# The tallest an alert's file list grows before it starts scrolling. A bulk
+# deletion is a consequential decision, so the list should show the whole set
+# where it reasonably can rather than five rows of it.
+_ALERT_ROWS_VISIBLE = 14
 
 # How many lines the dashboard's activity panel keeps. It answers "what is it
 # doing right now" at a glance; the Logs page is where history belongs.
@@ -136,9 +141,15 @@ class AlertBanner(QGroupBox):
         layout.addWidget(self.explanation)
 
         self.items = QListWidget()
-        self.items.setMaximumHeight(96)
         self.items.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        # Never elide. The default clips a long path on the right with an
+        # ellipsis and gives no scrollbar, so the one thing the reader needs —
+        # which file this is — is the part that disappears.
+        self.items.setTextElideMode(Qt.ElideNone)
+        self.items.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.items.setHorizontalScrollMode(QListWidget.ScrollPerPixel)
         layout.addWidget(self.items)
+        self._count = 0
 
         row = QHBoxLayout()
         for key, label in actions:
@@ -154,8 +165,36 @@ class AlertBanner(QGroupBox):
 
     def set_paths(self, paths):
         self.items.clear()
-        self.items.addItems(paths)
+        for path in paths:
+            item = QListWidgetItem(path)
+            # The tooltip carries the full path for the rows too long to read
+            # even after scrolling.
+            item.setToolTip(path)
+            self.items.addItem(item)
+        self._count = len(paths)
+        self._fit_to_contents()
         self.setVisible(bool(paths))
+
+    def _fit_to_contents(self):
+        """Size the list to its contents, up to the row cap."""
+        if not self._count:
+            return
+        row_height = self.items.sizeHintForRow(0)
+        if row_height <= 0:
+            row_height = self.items.fontMetrics().lineSpacing() + 2
+        rows = min(self._count, _ALERT_ROWS_VISIBLE)
+        height = rows * row_height + 2 * self.items.frameWidth()
+        # Reserve the horizontal scrollbar only when a path really is too wide,
+        # or every short list carries an unexplained gap under it.
+        if self.items.sizeHintForColumn(0) > self.items.viewport().width():
+            height += self.items.horizontalScrollBar().sizeHint().height()
+        self.items.setFixedHeight(height)
+
+    def resizeEvent(self, event):
+        # The width decides whether a scrollbar is needed, and the width is not
+        # final when set_paths runs, so re-fit whenever it changes.
+        super().resizeEvent(event)
+        self._fit_to_contents()
 
     def set_busy(self, busy):
         for btn in self._actions.values():

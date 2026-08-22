@@ -598,6 +598,98 @@ check("the daemon re-verifies before honouring the pause",
       inspect.getsource(_se2.daemon_loop).index("recheck_pending_deletions")
       < inspect.getsource(_se2.daemon_loop).index("if _sync_paused.is_set()"))
 
+print("\n== the deletion prompt shows the whole list, readably ==")
+# The list was capped at 96px — about five rows — and elided long paths on the
+# right with no scrollbar, so the part identifying the file was the part that
+# disappeared. That is the worst place to hide information: it is the list you
+# read before agreeing to delete files.
+from PySide6.QtCore import Qt as _Qt2
+from gui.pages import AlertBanner, _ALERT_ROWS_VISIBLE
+
+banner = AlertBanner("t", "e", [("ok", "OK")])
+banner.resize(700, 400)
+check("long paths are never elided",
+      banner.items.textElideMode() == _Qt2.ElideNone)
+check("a scrollbar appears when a path is too wide",
+      banner.items.horizontalScrollBarPolicy() == _Qt2.ScrollBarAsNeeded)
+
+long_path = ("Notion Archives/PhD Research/YorkModularSynthesisBook-eliot+arseni/"
+             "YorkModularSynthesisBook-eliot+arseni.md")
+banner.set_paths([long_path])
+check("the full path is kept, not truncated",
+      banner.items.item(0).text() == long_path)
+check("and it is available as a tooltip",
+      banner.items.item(0).toolTip() == long_path)
+
+one_row = banner.items.height()
+banner.set_paths([f"Notes/n{i}.md" for i in range(13)])
+thirteen = banner.items.height()
+check("the list grows with the number of files", thirteen > one_row,
+      f"{one_row} -> {thirteen}")
+check("13 files no longer need scrolling",
+      13 <= _ALERT_ROWS_VISIBLE, str(_ALERT_ROWS_VISIBLE))
+
+banner.set_paths([f"Notes/n{i}.md" for i in range(400)])
+capped = banner.items.height()
+row = banner.items.sizeHintForRow(0)
+check("but a huge list is capped rather than filling the window",
+      capped <= (_ALERT_ROWS_VISIBLE + 2) * row, str(capped))
+
+print("\n== the tray goes red while a deletion decision is outstanding ==")
+from gui.tray import Tray, _COLOURS
+
+_tray = Tray()
+
+def _tray_state(**kw):
+    base = {"pending_deletions": 0, "pending_ignored": 0, "paused": False,
+            "running": False, "last_sync": ""}
+    base.update(kw)
+    _tray.on_status(base)
+    return _tray._state
+
+check("idle is not red", _tray_state() == "idle")
+check("a hand-set pause is amber, not red", _tray_state(paused=True) == "paused")
+check("pending deletions turn the arrows red",
+      _tray_state(pending_deletions=13, paused=True) == "attention")
+check("attention beats paused, so the red is not masked by the amber",
+      _tray_state(pending_deletions=13, paused=True) == "attention")
+check("the attention colour is red", _COLOURS["attention"].name() == "#f85149")
+check("it stays red until the decision is resolved",
+      _tray_state(pending_deletions=13, paused=True) == "attention")
+check("and returns to normal once it is", _tray_state() == "idle")
+
+# The whole chain: persisted set -> restore on start -> status -> red tray.
+_se2._save_pending_deletions(["Notes/a.md", "Notes/b.md", "Notes/c.md", "Notes/d.md"])
+_se2._pending_remote_deletions.clear()
+_se2._sync_paused.clear()
+_se2.restore_pending_deletions()
+check("after a restart the tray is red again",
+      _tray_state(pending_deletions=len(_se2.get_pending_deletions()),
+                  paused=_se2.is_paused()) == "attention")
+_se2.cancel_pending_deletions()
+
+# The red must not wait for iCloud: the daemon starts only after authentication,
+# which can be slow or fail, and the decision is outstanding either way.
+import gui.app as _app
+check("the app restores the prompt at startup, not only in the daemon",
+      "restore_pending_deletions" in inspect.getsource(_app))
+_app_src = inspect.getsource(_app)
+check("and does so before the session is created",
+      _app_src.index("restore_pending_deletions") < _app_src.index("SessionManager()"))
+
+_se2._save_pending_deletions(["Notes/a.md", "Notes/b.md", "Notes/c.md", "Notes/d.md"])
+_se2._pending_remote_deletions.clear()
+first = _se2.restore_pending_deletions()
+second = _se2.restore_pending_deletions()      # the daemon, restoring again
+check("restoring twice is harmless", first == second and len(second) == 4)
+_se2.cancel_pending_deletions()
+
+print("\n== the guard asks after 3 deletions, not 10 ==")
+check("the threshold is 3", _se2._DELETION_THRESHOLD == 3,
+      str(_se2._DELETION_THRESHOLD))
+check("4 missing files trip it", 4 > _se2._DELETION_THRESHOLD)
+check("3 missing files do not", not (3 > _se2._DELETION_THRESHOLD))
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)
