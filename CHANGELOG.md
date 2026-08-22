@@ -5,7 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.5] - 2026-08-22
+
+Deletion safety. A remote scan that failed part-way used to look exactly like a mass deletion, and
+the prompt that caught it did not survive a restart. Anyone running 0.1.4 should update: the request
+timeout added there made the underlying fault far easier to reach.
 
 ### Fixed
 
@@ -66,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Stale build artifacts, spike scripts and generated packaging metadata that were left in the
   working tree.
+
+### Deletion safety, as it now stands
+
+Four layers, in the order they apply:
+
+1. **Incomplete scan** — a folder listing that fails aborts the cycle. It is never read as an empty
+   folder.
+2. **Truncated scan** — a scan returning under 90% of the tracked count aborts the cycle.
+3. **Stale data** — when the remote listing comes from the cache, no deletion is considered.
+4. **Bulk deletion** — more than 3 tracked files missing from a complete, fresh scan pauses sync and
+   asks. The question is stored, survives a restart, turns the tray red, and clears only when you
+   answer it or a later complete scan proves the files are still there.
 
 ## [0.1.4] - 2026-08-20
 
@@ -193,7 +209,8 @@ First release that anyone can install and use.
 - Secondary labels are legible. They used Qt's disabled state, which renders at minimal contrast.
 - The log view survives a restart, because it reads the database and not the in-memory buffer.
 
-[Unreleased]: https://github.com/biomassa/obsisync/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/biomassa/obsisync/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/biomassa/obsisync/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/biomassa/obsisync/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/biomassa/obsisync/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/biomassa/obsisync/compare/v0.1.1...v0.1.2

@@ -1,6 +1,6 @@
 # Maintainer: biomassa <kustota@gmail.com>
 pkgname=obsisync
-pkgver=0.1.4
+pkgver=0.1.5
 pkgrel=1
 pkgdesc="Sync an Obsidian vault with iCloud Drive"
 arch=('x86_64')
