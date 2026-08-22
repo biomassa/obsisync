@@ -316,26 +316,42 @@ separate Linux tool and does not constrain this one.
 
 ## Memory and CPU
 
-obsisync runs all the time, so its footprint matters. These numbers come from Linux, with the
-GUI open and a vault of 817 files:
+obsisync runs all the time, so its footprint matters. These numbers come from Linux (Wayland),
+version 0.1.5, with a vault of 819 files.
 
-| | resident memory |
-|---|---|
-| from source, upstream pyicloud | 135 MB |
-| from source, vendored Drive-only client | 113 MB |
-| compiled | 136 MB |
+A onefile build runs as two processes: a small launcher that unpacks and starts the program, and
+the program itself. Both are counted here, because both show up in a task manager.
+
+| | window open | tray only |
+|---|---|---|
+| the program, resident (`VmRSS`) | 184 MB | 171 MB |
+| — private heap (`RssAnon`) | 65 MB | 65 MB |
+| — mapped from disk (`RssFile`) | 106 MB | 106 MB |
+| — graphics buffers (`RssShmem`) | 13 MB | 0 MB |
+| the launcher, resident | 53 MB | 53 MB |
+| **private and unreclaimable** (`Private_Dirty`) | **69 MB** | **65 MB** |
+
+The last row is the honest cost. The rest is Qt and the binary mapped from disk, which the kernel
+drops again when memory gets short. About 65 MB is genuinely spoken for.
+
+Closing the window to the tray saves less than it looks like it should. The 13 MB that goes is the
+graphics buffers, which are shared. The private heap does not shrink at all: Qt stays loaded for
+the tray icon, and the C library keeps freed memory in its own pools instead of returning it to the
+system. Closing the window is for tidiness, not for memory.
 
 CPU stays at about 0.5% of one core. The watcher waits on filesystem events, and the poll runs
 every 120 seconds.
 
 Vault size changes little. The scan structures cost 0.57 KB per file, so 20000 files add 11 MB.
 
-`icloudlite/` exists for this reason. Upstream pyicloud imports fido2, CloudKit and every service
-— photos, calendar, contacts, reminders, notes — before your code touches Drive. Those imports are
-unconditional, so a build cannot exclude them.
+`icloudlite/` exists to keep this smaller. Upstream pyicloud imports fido2, CloudKit and every
+service — photos, calendar, contacts, reminders, notes — before your code touches Drive. Those
+imports are unconditional, so a build cannot exclude them. Replacing it with the Drive-only fork
+saved about 20 MB when the two were measured against each other.
 
-The compiled build unpacks itself into `~/.cache/obsisync/`. The default location is `/tmp`, which
-is a memory filesystem on most Linux systems, and that held about 179 MB of RAM.
+The compiled build unpacks itself into `~/.cache/obsisync/<version>/`, which costs about 187 MB of
+disk. The Nuitka default is `/tmp`, which is a memory filesystem on most Linux systems, and that
+held the same amount in RAM.
 
 ## Credits
 
