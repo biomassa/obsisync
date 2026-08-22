@@ -143,6 +143,112 @@ def unsubscribe_logs(queue):
             _web_log_listeners.remove(queue)
 
 
+# Pending deletions outlive the process. A question the user has not answered
+# must not disappear because they quit or the laptop slept: on restart the guard
+# would re-derive the same candidates only if the condition still held *and* the
+# count stayed above the threshold, so a set that shrank to ten or fewer would be
+# applied silently, without ever being asked about.
+_PENDING_DELETIONS_KEY = "pending_remote_deletions"
+
+# True when the deletion guard is what paused syncing, so an automatic all-clear
+# does not lift a pause the user set by hand.
+_paused_by_deletions = False
+
+
+def _save_pending_deletions(paths):
+    import json
+    set_meta(_PENDING_DELETIONS_KEY, json.dumps(list(paths)))
+
+
+def _load_pending_deletions():
+    import json
+    raw = get_meta(_PENDING_DELETIONS_KEY, "")
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except ValueError:
+        return []
+    return [p for p in loaded if isinstance(p, str)]
+
+
+def _clear_pending_deletions():
+    global _paused_by_deletions
+    with _pending_deletions_lock:
+        _pending_remote_deletions.clear()
+    _save_pending_deletions([])
+    _paused_by_deletions = False
+
+
+def restore_pending_deletions():
+    """Reinstate an unanswered deletion prompt after a restart."""
+    global _paused_by_deletions
+    pending = _load_pending_deletions()
+    if not pending:
+        return []
+    with _pending_deletions_lock:
+        _pending_remote_deletions[:] = pending
+    _paused_by_deletions = True
+    _sync_paused.set()
+    log("ERROR",
+        f"{len(pending)} remote deletion(s) are still awaiting your decision from "
+        "a previous run — sync stays paused until you answer")
+    return pending
+
+
+def recheck_pending_deletions(vault_node, cfg):
+    """Re-scan and drop any pending path that is present on iCloud after all.
+
+    This is the "was it a false alarm" test. A failed folder listing used to look
+    exactly like a deletion, so a pending set can be entirely phantom; when a
+    later complete scan shows the files present, the answer is known and there is
+    nothing to ask. Only an incomplete or stale scan leaves the question open.
+
+    Returns True when the whole set cleared.
+    """
+    with _pending_deletions_lock:
+        pending = list(_pending_remote_deletions)
+    if not pending:
+        return True
+
+    try:
+        remote_files, fresh = scan_remote(
+            vault_node, force=True, extra_ignore=cfg.get("ignore_patterns", []))
+    except RemoteScanIncomplete as exc:
+        log("INFO",
+            f"Cannot yet verify the pending deletions — the remote scan was "
+            f"incomplete ({exc}). Staying paused.")
+        return False
+    if not fresh:
+        log("DEBUG", "Pending deletions not verified — remote data is stale")
+        return False
+
+    still_missing = [p for p in pending if p not in remote_files]
+    recovered = len(pending) - len(still_missing)
+
+    if not still_missing:
+        log("INFO",
+            f"All {recovered} pending deletion(s) are present on iCloud after all "
+            "— false alarm, resuming sync")
+        guard_paused = _paused_by_deletions
+        _clear_pending_deletions()
+        # Only lift the pause the guard put on. A pause the user set by hand is
+        # their decision and stays.
+        if guard_paused:
+            _sync_paused.clear()
+            _sync_trigger.set()
+        return True
+
+    if recovered:
+        with _pending_deletions_lock:
+            _pending_remote_deletions[:] = still_missing
+        _save_pending_deletions(still_missing)
+        log("INFO",
+            f"{recovered} of the pending deletion(s) are present on iCloud after "
+            f"all; {len(still_missing)} still need your decision")
+    return False
+
+
 def pause():
     _sync_paused.set()
 
@@ -177,7 +283,7 @@ def confirm_pending_deletions(api, vault_node, cfg):
     local_path = cfg["local_path"]
     with _pending_deletions_lock:
         pending = list(_pending_remote_deletions)
-        _pending_remote_deletions.clear()
+    _clear_pending_deletions()
     for rel_path in pending:
         if rel_path in remote_files:
             try:
@@ -212,8 +318,7 @@ def confirm_pending_deletions(api, vault_node, cfg):
 
 
 def cancel_pending_deletions():
-    with _pending_deletions_lock:
-        _pending_remote_deletions.clear()
+    _clear_pending_deletions()
     log("INFO", "Pending deletions cancelled — files left intact")
     resume()
 
@@ -223,7 +328,7 @@ def upload_pending_deletions(api, vault_node, cfg):
     local_path = cfg["local_path"]
     with _pending_deletions_lock:
         pending = list(_pending_remote_deletions)
-        _pending_remote_deletions.clear()
+    _clear_pending_deletions()
     uploaded = 0
     errors = 0
     for rel_path in pending:
@@ -979,8 +1084,13 @@ def _run_sync_cycle(api, vault_node, cfg, force=False):
     # ── Bulk remote deletion guard ──
     if _deletion_candidates:
         if len(_deletion_candidates) > _DELETION_THRESHOLD:
+            global _paused_by_deletions
             with _pending_deletions_lock:
                 _pending_remote_deletions[:] = _deletion_candidates
+            # Persist before pausing: an unanswered question must survive a quit,
+            # a crash or the laptop sleeping.
+            _save_pending_deletions(_deletion_candidates)
+            _paused_by_deletions = True
             for rel_path in _deletion_candidates:
                 log("ERROR", f"Remote deletion pending confirmation: {rel_path}")
             log("ERROR", f"Bulk remote deletion detected ({len(_deletion_candidates)} files) — sync paused until confirmed")
@@ -1069,6 +1179,8 @@ def daemon_loop(api, vault_node, cfg):
         os.makedirs(local_path, exist_ok=True)
         bootstrap_vault(api, vault_node, local_path, cfg.get("ignore_patterns", []))
 
+    restore_pending_deletions()
+
     log("INFO", "Daemon started — watching for changes")
 
     while not _shutdown_event.is_set():
@@ -1077,6 +1189,13 @@ def daemon_loop(api, vault_node, cfg):
 
         if _shutdown_event.is_set():
             break
+
+        # Re-verify before honouring the pause. The guard's pause stops sync
+        # cycles, so without this the scan that could prove a false alarm would
+        # never run and the prompt could only ever be cleared by hand.
+        if get_pending_deletions():
+            if not recheck_pending_deletions(vault_node, cfg):
+                continue
 
         if _sync_paused.is_set():
             continue

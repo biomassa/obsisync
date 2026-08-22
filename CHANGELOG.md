@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into a raised exception, which these handlers then swallowed, so the failure mode became far more
   reachable than before.
 
+- **An unanswered deletion prompt did not survive a restart.** The pending list and the pause were
+  in-memory only, so quitting obsisync — or a laptop sleeping — discarded a question the user had
+  not answered. On restart the guard re-derived the prompt only if the condition still held *and*
+  the count was still above the threshold of ten, so a set that had since shrunk to ten or fewer
+  was applied silently, without ever being asked about.
+
+  The pending set is now written to the database before sync pauses, and restored on start. It is
+  cleared in exactly two ways: the user answers, or a later **complete and fresh** scan shows the
+  files present on iCloud after all — a proven false alarm, which resumes sync by itself. An
+  incomplete or stale scan leaves the question open. The daemon re-verifies before honouring the
+  pause, because the pause stops sync cycles and the scan that proves the all-clear would otherwise
+  never run. A pause the user set by hand is never lifted automatically.
+
 ### Changed
 
 - CI builds on a tag only. A branch push and its tag are two separate push events, and both matched

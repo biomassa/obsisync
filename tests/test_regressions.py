@@ -525,6 +525,79 @@ for fn in ("confirm_pending_deletions", "reconcile_first_run",
 check("confirming deletions on an incomplete scan deletes nothing",
       "Nothing has been deleted" in inspect.getsource(_se2.confirm_pending_deletions))
 
+print("\n== an unanswered deletion prompt survives a restart ==")
+# The pending list and the pause were in-memory only, so quitting or sleeping
+# discarded a question the user had not answered. On restart the guard only
+# re-asked if the condition still held AND the count was still above ten, so a
+# set that had shrunk to ten or fewer was applied silently.
+_se2.db_init()
+_pending = [f"Notes/n{i}.md" for i in range(13)]
+
+def _stub_tree(fail=False):
+    kids = [_Node(f"n{i}.md", "file") for i in range(13)]
+    vault = _Node("v", kids=[_Node("Notes", kids=kids, fail=fail)])
+    vault.get_children()
+    return vault
+
+with _se2._pending_deletions_lock:
+    _se2._pending_remote_deletions[:] = _pending
+_se2._save_pending_deletions(_pending)
+_se2._paused_by_deletions = True
+_se2._sync_paused.set()
+check("the pending set is written to the database",
+      len(_se2._load_pending_deletions()) == 13)
+
+# Quitting drops every bit of in-memory state.
+_se2._pending_remote_deletions.clear()
+_se2._sync_paused.clear()
+_se2._paused_by_deletions = False
+check("a restart starts with nothing in memory", not _se2.get_pending_deletions())
+
+_se2.restore_pending_deletions()
+check("the prompt is restored after a restart",
+      len(_se2.get_pending_deletions()) == 13)
+check("and sync is paused again", _se2.is_paused())
+
+_scanner.last_force_refresh = 0.0
+cleared = _se2.recheck_pending_deletions(_stub_tree(fail=True), {"local_path": S})
+check("an incomplete scan does not clear the prompt", not cleared)
+check("the prompt is still there", len(_se2.get_pending_deletions()) == 13)
+check("and sync is still paused", _se2.is_paused())
+
+_scanner.last_force_refresh = 0.0
+cleared = _se2.recheck_pending_deletions(_stub_tree(fail=False), {"local_path": S})
+check("a complete scan showing the files clears it as a false alarm", cleared)
+check("nothing is left pending", not _se2.get_pending_deletions())
+check("the database copy is cleared too", not _se2._load_pending_deletions())
+check("sync resumes on its own", not _se2.is_paused())
+
+# A pause the user set by hand is their decision, not the guard's.
+_scanner.last_force_refresh = 0.0
+with _se2._pending_deletions_lock:
+    _se2._pending_remote_deletions[:] = _pending
+_se2._save_pending_deletions(_pending)
+_se2._paused_by_deletions = False          # user paused, guard did not
+_se2._sync_paused.set()
+_se2.recheck_pending_deletions(_stub_tree(fail=False), {"local_path": S})
+check("an all-clear does not lift a pause the user set", _se2.is_paused())
+_se2._sync_paused.clear()
+
+# Answering the question clears the stored copy, or it would come back.
+with _se2._pending_deletions_lock:
+    _se2._pending_remote_deletions[:] = _pending
+_se2._save_pending_deletions(_pending)
+_se2.cancel_pending_deletions()
+check("cancelling clears the stored copy", not _se2._load_pending_deletions())
+check("cancelling clears it in memory", not _se2.get_pending_deletions())
+
+check("the guard persists before it pauses",
+      "_save_pending_deletions" in inspect.getsource(_se2._run_sync_cycle))
+check("the daemon restores the prompt on start",
+      "restore_pending_deletions" in inspect.getsource(_se2.daemon_loop))
+check("the daemon re-verifies before honouring the pause",
+      inspect.getsource(_se2.daemon_loop).index("recheck_pending_deletions")
+      < inspect.getsource(_se2.daemon_loop).index("if _sync_paused.is_set()"))
+
 shutil.rmtree(S, ignore_errors=True)
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)
